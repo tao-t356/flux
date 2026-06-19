@@ -379,6 +379,47 @@ find_available_port() {
   return 1
 }
 
+load_panel_ports_from_env() {
+  if [ -z "${FRONTEND_PORT:-}" ]; then
+    FRONTEND_PORT=$(read_env_value FRONTEND_PORT || true)
+  fi
+  FRONTEND_PORT="${FRONTEND_PORT:-6366}"
+
+  if [ -z "${BACKEND_PORT:-}" ]; then
+    BACKEND_PORT=$(read_env_value BACKEND_PORT || true)
+  fi
+  BACKEND_PORT="${BACKEND_PORT:-6365}"
+}
+
+open_local_firewall_ports() {
+  local frontend_port="${1:-$FRONTEND_PORT}"
+  local backend_port="${2:-$BACKEND_PORT}"
+  local opened=0
+
+  echo "🔓 正在检查本机防火墙端口..."
+
+  if command -v ufw &> /dev/null && ufw status 2>/dev/null | grep -qi "Status: active"; then
+    ufw allow "${frontend_port}/tcp" >/dev/null 2>&1 || true
+    ufw allow "${backend_port}/tcp" >/dev/null 2>&1 || true
+    echo "✅ 已放行 ufw：TCP $frontend_port / TCP $backend_port"
+    opened=1
+  fi
+
+  if command -v firewall-cmd &> /dev/null && firewall-cmd --state >/dev/null 2>&1; then
+    firewall-cmd --permanent --add-port="${frontend_port}/tcp" >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-port="${backend_port}/tcp" >/dev/null 2>&1 || true
+    firewall-cmd --reload >/dev/null 2>&1 || true
+    echo "✅ 已放行 firewalld：TCP $frontend_port / TCP $backend_port"
+    opened=1
+  fi
+
+  if [ "$opened" = "0" ]; then
+    echo "ℹ️ 未检测到已启用的 ufw/firewalld，本机防火墙跳过"
+  fi
+
+  echo "⚠️ 如果外网打不开，还需要在 VPS 控制台安全组放行 TCP $frontend_port 和 TCP $backend_port"
+}
+
 normalize_cors_allowed_origins() {
   local value="${1:-*}"
   local origin
@@ -433,6 +474,66 @@ format_access_host() {
   else
     echo "$host"
   fi
+}
+
+strip_access_host_brackets() {
+  local host="$1"
+  if [[ "$host" =~ ^\[([^]]+)\]$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    echo "$host"
+  fi
+}
+
+is_ipv4_address() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
+
+is_ip_literal() {
+  local host
+  host=$(strip_access_host_brackets "$1")
+  is_ipv4_address "$host" || [[ "$host" == *:* ]]
+}
+
+resolve_host_ips() {
+  local host
+  host=$(strip_access_host_brackets "$(format_access_host "$1")")
+
+  if [ -z "$host" ] || [ "$host" = "服务器IP" ]; then
+    return 0
+  fi
+
+  if is_ip_literal "$host"; then
+    echo "$host"
+    return 0
+  fi
+
+  if command -v getent &> /dev/null; then
+    getent ahosts "$host" 2>/dev/null | awk '{print $1}' | sort -u
+  elif command -v dig &> /dev/null; then
+    dig +short A "$host" 2>/dev/null
+    dig +short AAAA "$host" 2>/dev/null
+  elif command -v host &> /dev/null; then
+    host "$host" 2>/dev/null | awk '/has address/ {print $4} /has IPv6 address/ {print $5}' | sort -u
+  fi
+}
+
+has_ip_in_list() {
+  local needle="$1"
+  local value
+
+  while IFS= read -r value; do
+    if [ "$value" = "$needle" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+check_http_url() {
+  local url="$1"
+  curl -fsS --connect-timeout 4 --max-time 8 -o /dev/null "$url" >/dev/null 2>&1
 }
 
 get_saved_access_host() {
@@ -595,6 +696,61 @@ select_access_host() {
   echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
 }
 
+print_access_diagnostics() {
+  local access_host="$1"
+  local frontend_port="$2"
+  local backend_port="$3"
+  local machine_host
+  local machine_ip
+  local access_url
+  local ip_url
+  local resolved_ips
+
+  machine_host=$(detect_machine_public_host)
+  machine_ip=$(strip_access_host_brackets "$machine_host")
+  access_url="http://$access_host:$frontend_port"
+  ip_url="http://$machine_host:$frontend_port"
+
+  echo "🎉 部署完成"
+  echo "🌐 面板访问地址: $access_url"
+  if [ "$machine_host" != "$access_host" ] && [ "$machine_host" != "服务器IP" ]; then
+    echo "🌐 服务器 IP 访问地址: $ip_url"
+  fi
+  echo "💡 默认管理员账号: facker668 / wohenshuai"
+  echo "⚠️  登录后请立即修改默认密码！"
+
+  echo ""
+  echo "🔎 访问自检："
+  if check_http_url "http://127.0.0.1:$frontend_port"; then
+    echo "✅ 本机前端端口正常：http://127.0.0.1:$frontend_port"
+  else
+    echo "⚠️ 本机前端端口未响应，请先执行：docker ps && docker logs vite-frontend --tail 80"
+  fi
+
+  if [ "$access_host" != "$machine_host" ] && ! is_ip_literal "$access_host"; then
+    resolved_ips=$(resolve_host_ips "$access_host" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+    if [ -z "$resolved_ips" ]; then
+      echo "⚠️ 域名暂未解析到 IP：$access_host"
+    else
+      echo "✅ 域名解析结果：$resolved_ips"
+      if [ "$machine_host" != "服务器IP" ] && ! printf '%s\n' $resolved_ips | has_ip_in_list "$machine_ip"; then
+        echo "⚠️ 域名解析结果和当前服务器公网 IP 不一致：$machine_ip"
+      fi
+    fi
+  fi
+
+  if [ "$access_host" != "服务器IP" ]; then
+    if check_http_url "$access_url"; then
+      echo "✅ 服务器访问面板地址正常：$access_url"
+    else
+      echo "⚠️ 服务器访问面板地址失败。若本机端口正常，优先检查域名解析、VPS 安全组和防火墙。"
+    fi
+  fi
+
+  echo "ℹ️ 外网访问面板需要放行 TCP $frontend_port；节点连接面板需要放行 TCP $backend_port。"
+  echo "ℹ️ 如果域名开启了 CDN/代理，$frontend_port 这种非 80/443 端口可能打不开，请关闭代理或配置 80/443 反向代理。"
+}
+
 js_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -694,6 +850,7 @@ install_panel() {
   echo "🚀 开始安装爱转角转发面板..."
   check_docker 1
   get_config_params
+  open_local_firewall_ports "$FRONTEND_PORT" "$BACKEND_PORT"
 
   echo "🔽 下载必要文件..."
   download_docker_compose docker-compose.yml
@@ -731,11 +888,7 @@ EOF
   $DOCKER_CMD up -d
   PANEL_ACCESS_HOST_VALUE="${PANEL_ACCESS_HOST_VALUE:-$(detect_public_host)}"
   write_frontend_runtime_config "$PANEL_ACCESS_HOST_VALUE" "$BACKEND_PORT"
-
-  echo "🎉 部署完成"
-  echo "🌐 访问地址: http://$PANEL_ACCESS_HOST_VALUE:$FRONTEND_PORT"
-  echo "💡 默认管理员账号: facker668 / wohenshuai"
-  echo "⚠️  登录后请立即修改默认密码！"
+  print_access_diagnostics "$PANEL_ACCESS_HOST_VALUE" "$FRONTEND_PORT" "$BACKEND_PORT"
 
 
 }
@@ -744,8 +897,10 @@ EOF
 update_panel() {
   echo "🔄 开始更新爱转角转发面板..."
   check_docker
+  load_panel_ports_from_env
   select_access_host if-missing
   set_env_value FLUX_PANEL_ACCESS_HOST "$PANEL_ACCESS_HOST_VALUE"
+  open_local_firewall_ports "$FRONTEND_PORT" "$BACKEND_PORT"
 
   echo "🔽 下载最新配置文件..."
   download_docker_compose docker-compose.yml
@@ -810,6 +965,7 @@ update_panel() {
   done
 
   echo "✅ 更新完成"
+  print_access_diagnostics "$PANEL_ACCESS_HOST_VALUE" "$FRONTEND_PORT" "$BACKEND_PORT"
 }
 
 
