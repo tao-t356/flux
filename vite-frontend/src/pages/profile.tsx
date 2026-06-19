@@ -247,7 +247,7 @@ export default function ProfilePage() {
                    rel="noopener noreferrer"
                    className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                  >
-                   flux-panel
+                    爱转角转发面板
                  </a>
                </p>
                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">

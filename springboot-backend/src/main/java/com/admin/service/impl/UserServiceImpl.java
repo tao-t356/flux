@@ -103,7 +103,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         loginAttemptLimiter.recordSuccess(loginDto.getUsername(), clientIp);
         migratePasswordHashIfNeeded(user, loginDto.getPassword());
         String token = JwtUtil.generateToken(user);
-        boolean requirePasswordChange = Objects.equals(loginDto.getUsername(), "admin_user") || Objects.equals(loginDto.getPassword(), "admin_user");
+        boolean requirePasswordChange = Objects.equals(loginDto.getUsername(), "facker668") || Objects.equals(loginDto.getPassword(), "wohenshuai");
         return R.ok(MapUtil.builder()
                 .put("token", token)
                 .put("name", user.getUser())

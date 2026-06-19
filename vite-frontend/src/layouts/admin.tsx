@@ -316,7 +316,7 @@ export default function AdminLayout({
                 rel="noopener noreferrer"
                 className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               >
-                flux-panel
+                爱转角转发面板
               </a>
             </p>
           </div>
@@ -459,4 +459,4 @@ export default function AdminLayout({
       </Modal>
     </div>
   );
-} 
+}

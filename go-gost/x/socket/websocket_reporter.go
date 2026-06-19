@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -227,7 +228,10 @@ func (w *WebSocketReporter) connect() error {
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
-	conn, _, err := dialer.Dial(u.String(), nil)
+	header := http.Header{}
+	header.Set("X-Flux-Node-Secret", w.secret)
+
+	conn, _, err := dialer.Dial(u.String(), header)
 	if err != nil {
 		return fmt.Errorf("连接WebSocket失败: %v", err)
 	}
@@ -1051,8 +1055,7 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 		return nil, err
 	}
 
-	maskedURL := strings.Replace(fullURL, url.QueryEscape(secret), "******", 1)
-	fmt.Printf("🔗 WebSocket连接URL: %s\n", maskedURL)
+	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
 
 	reporter := NewWebSocketReporter(fullURL, secret)
 	// 保存 addr, secret, version 供重连时使用
@@ -1066,7 +1069,6 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 func buildWebSocketURL(addr string, secret string, version string, http int, tls int, socks int) (string, error) {
 	query := url.Values{}
 	query.Set("type", "1")
-	query.Set("secret", secret)
 	query.Set("version", version)
 	query.Set("http", strconv.Itoa(http))
 	query.Set("tls", strconv.Itoa(tls))

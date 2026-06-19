@@ -1,4 +1,4 @@
-# flux-panel转发面板 哆啦A梦转发面板
+# 爱转角转发面板
 
 # 赞助商
 <p align="center">
@@ -50,8 +50,8 @@ curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/inst
 
 #### 默认管理员账号
 
-- **账号**: admin_user
-- **密码**: admin_user
+- **账号**: facker668
+- **密码**: wohenshuai
 
 > ⚠️ 首次登录后请立即修改默认密码！
 

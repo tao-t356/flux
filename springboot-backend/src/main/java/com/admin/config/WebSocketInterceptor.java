@@ -25,6 +25,8 @@ import java.util.Objects;
 @Slf4j
 public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
 
+    private static final String NODE_SECRET_HEADER = "X-Flux-Node-Secret";
+
     @Resource
     NodeService nodeService;
 
@@ -40,16 +42,21 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Map<String, Object> attributes) throws Exception {
         ServletServerHttpRequest serverHttpRequest = (ServletServerHttpRequest) request;
         String secret = serverHttpRequest.getServletRequest().getParameter("secret");
+        String headerSecret = serverHttpRequest.getServletRequest().getHeader(NODE_SECRET_HEADER);
         String type = serverHttpRequest.getServletRequest().getParameter("type");
         String version = serverHttpRequest.getServletRequest().getParameter("version");
         String http = serverHttpRequest.getServletRequest().getParameter("http");
         String tls = serverHttpRequest.getServletRequest().getParameter("tls");
         String socks = serverHttpRequest.getServletRequest().getParameter("socks");
+        if (type == null || type.isBlank()) {
+            type = "0";
+        }
         if (Objects.equals(type, "1")) {
             if (forceSecureNodeTransport && !SecureTransportUtil.isSecureRequest(serverHttpRequest.getServletRequest())) {
                 log.warn("节点握手拒绝：需要 HTTPS/WSS，ip={}", getClientIp(request));
                 return false;
             }
+            secret = firstNonBlank(headerSecret, secret);
             log.info("节点握手请求：type={}, version={}, ip={}", type, version, getClientIp(request));
             Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
             if (node == null) {
@@ -65,9 +72,14 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
             log.info("节点 {} 通过验证，版本: {}", node.getId(), version);
             // 不在这里更新状态，等到连接建立后再统一更新
         }else {
-            boolean b = JwtUtil.validateToken(secret);
-            if (!b) return false;
-            attributes.put("id", JwtUtil.getUserIdFromToken(secret));
+            if (secret != null && !secret.isBlank()) {
+                boolean b = JwtUtil.validateToken(secret);
+                if (!b) return false;
+                attributes.put("id", JwtUtil.getUserIdFromToken(secret));
+                attributes.put("authenticated", true);
+            } else {
+                attributes.put("authenticated", false);
+            }
         }
         attributes.put("type", type);
         return true;
@@ -81,5 +93,11 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         return null;
     }
 
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
+    }
 
 }

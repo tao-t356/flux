@@ -15,6 +15,10 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private val JS_CALLBACK_PATTERN = Regex("^[A-Za-z_$][A-Za-z0-9_$]*$")
+    }
+
     private lateinit var webView: WebView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,7 +26,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
-        WebView.setWebContentsDebuggingEnabled(true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         setupWebView()
         loadUrl()
 
@@ -49,7 +53,7 @@ class MainActivity : AppCompatActivity() {
 
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
 
         val isDarkTheme = resources.configuration.uiMode and
@@ -66,8 +70,9 @@ class MainActivity : AppCompatActivity() {
             fun getPanelAddresses(callback: String) {
                 val sharedPrefs = getSharedPreferences("panel_config", MODE_PRIVATE)
                 val addresses = sharedPrefs.getString("panel_addresses", "[]")
+                val safeCallback = if (JS_CALLBACK_PATTERN.matches(callback)) callback else "setPanelAddresses"
                 webView.post {
-                    webView.evaluateJavascript("window.$callback($addresses);", null)
+                    webView.evaluateJavascript("window.$safeCallback($addresses);", null)
                 }
             }
 

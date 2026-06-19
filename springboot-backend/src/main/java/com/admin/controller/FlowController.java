@@ -26,6 +26,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /**
  * 流量上报控制器
@@ -49,7 +50,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @RestController
 @RequestMapping("/flow")
-@CrossOrigin
 @Slf4j
 public class FlowController extends BaseController {
 
@@ -58,6 +58,7 @@ public class FlowController extends BaseController {
     private static final String SECURE_TRANSPORT_REQUIRED_RESPONSE = "secure transport required";
     private static final String DEFAULT_USER_TUNNEL_ID = "0";
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
+    private static final Pattern SERVICE_NAME_PART_PATTERN = Pattern.compile("\\d+");
 
     // 用于同步相同用户和隧道的流量更新操作
     private static final ConcurrentHashMap<String, Object> USER_LOCKS = new ConcurrentHashMap<>();
@@ -113,12 +114,15 @@ public class FlowController extends BaseController {
 
     @PostMapping("/config")
     @LogAnnotation
-    public String config(@RequestBody String rawData, String secret) {
+    public String config(@RequestBody String rawData,
+                         String secret,
+                         @RequestHeader(value = "X-Flux-Node-Secret", required = false) String headerSecret) {
         if (!isSecureNodeRequest()) {
             log.warn("拒绝非安全节点配置上报");
             return SECURE_TRANSPORT_REQUIRED_RESPONSE;
         }
 
+        secret = resolveNodeSecret(secret, headerSecret);
         Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
         if (node == null) return SUCCESS_RESPONSE;
 
@@ -154,29 +158,56 @@ public class FlowController extends BaseController {
      */
     @RequestMapping("/upload")
     @LogAnnotation
-    public String uploadFlowData(@RequestBody String rawData, String secret) {
+    public String uploadFlowData(@RequestBody String rawData,
+                                 String secret,
+                                 @RequestHeader(value = "X-Flux-Node-Secret", required = false) String headerSecret) {
         if (!isSecureNodeRequest()) {
             log.warn("拒绝非安全节点流量上报");
             return SECURE_TRANSPORT_REQUIRED_RESPONSE;
         }
+
+        secret = resolveNodeSecret(secret, headerSecret);
 
         // 1. 验证节点权限
         if (!isValidNode(secret)) {
             return SUCCESS_RESPONSE;
         }
 
-        // 2. 尝试解密数据
-        String decryptedData = decryptIfNeeded(rawData, secret);
+        try {
+            // 2. 尝试解密数据
+            String decryptedData = decryptIfNeeded(rawData, secret);
 
-        // 3. 解析为FlowDto列表
-        JSONArray flowDataList = JSONObject.parseArray(decryptedData);
-        log.info("节点上报流量数据{}", flowDataList);
-        for (int i = 0; i < flowDataList.size(); i++) {
-            String jsonObject = flowDataList.getJSONObject(i).toJSONString();
-            FlowDto flowDto = JSONObject.parseObject(jsonObject, FlowDto.class);
-            if (!Objects.equals(flowDto.getN(), "web_api")) {
+            // 3. 解析为FlowDto列表
+            JSONArray flowDataList = JSONObject.parseArray(decryptedData);
+            if (flowDataList == null) {
+                return SUCCESS_RESPONSE;
+            }
+            log.info("节点上报流量数据{}", flowDataList);
+            for (int i = 0; i < flowDataList.size(); i++) {
+                JSONObject flowJson = flowDataList.getJSONObject(i);
+                if (flowJson == null) {
+                    log.warn("忽略非对象流量上报项: index={}", i);
+                    continue;
+                }
+                FlowDto flowDto = JSONObject.parseObject(flowJson.toJSONString(), FlowDto.class);
+                if (flowDto == null) {
+                    log.warn("忽略空流量上报项");
+                    continue;
+                }
+                if (Objects.equals(flowDto.getN(), "web_api")) {
+                    continue;
+                }
+                if (!isValidFlowData(flowDto)) {
+                    log.warn("忽略异常流量上报: service={}, upload={}, download={}",
+                            flowDto.getN(),
+                            flowDto.getU(),
+                            flowDto.getD());
+                    continue;
+                }
                 processFlowData(flowDto);
             }
+        } catch (Exception e) {
+            log.warn("节点流量上报解析失败: {}", e.getMessage());
         }
         return SUCCESS_RESPONSE;
 
@@ -245,6 +276,10 @@ public class FlowController extends BaseController {
         Forward forward = forwardService.getById(forwardId);
         if (forward != null){
             Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+            if (tunnel == null) {
+                log.warn("忽略流量上报：转发 {} 对应隧道不存在", forwardId);
+                return;
+            }
 
             //  处理流量倍率及单双向计算
             BigDecimal trafficRatio = tunnel.getTrafficRatio();
@@ -392,8 +427,18 @@ public class FlowController extends BaseController {
     }
 
     private boolean isValidNode(String secret) {
+        if (secret == null || secret.isBlank()) {
+            return false;
+        }
         int nodeCount = nodeService.count(new QueryWrapper<Node>().eq("secret", secret));
         return nodeCount > 0;
+    }
+
+    private String resolveNodeSecret(String requestSecret, String headerSecret) {
+        if (headerSecret != null && !headerSecret.isBlank()) {
+            return headerSecret;
+        }
+        return requestSecret;
     }
 
     private boolean isSecureNodeRequest() {
@@ -409,7 +454,29 @@ public class FlowController extends BaseController {
     }
 
     private String[] parseServiceName(String serviceName) {
-        return serviceName.split("_");
+        if (serviceName == null) {
+            return new String[0];
+        }
+        return serviceName.split("_", -1);
+    }
+
+    private boolean isValidFlowData(FlowDto flowDto) {
+        if (flowDto == null || flowDto.getU() == null || flowDto.getD() == null) {
+            return false;
+        }
+        if (flowDto.getU() < 0 || flowDto.getD() < 0) {
+            return false;
+        }
+        String[] serviceIds = parseServiceName(flowDto.getN());
+        if (serviceIds.length != 3) {
+            return false;
+        }
+        for (String serviceId : serviceIds) {
+            if (!SERVICE_NAME_PART_PATTERN.matcher(serviceId).matches()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String buildServiceName(String forwardId, String userId, String userTunnelId) {

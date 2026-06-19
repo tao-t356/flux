@@ -19,6 +19,7 @@ import (
 
 var httpReportURL string
 var configReportURL string
+var httpNodeSecret string
 var httpAESCrypto *crypto.AESCrypto // 新增：HTTP上报加密器
 
 // TrafficReportItem 流量报告项（压缩格式）
@@ -30,7 +31,7 @@ type TrafficReportItem struct {
 
 func SetHTTPReportURL(addr string, secret string) error {
 	query := url.Values{}
-	query.Set("secret", secret)
+	httpNodeSecret = secret
 
 	var err error
 	httpReportURL, err = transport.HTTPURL(addr, "/flow/upload", query)
@@ -92,6 +93,7 @@ func sendBatchTrafficReport(ctx context.Context, reportItems []TrafficReportItem
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "GOST-Traffic-Reporter/1.0")
+	req.Header.Set("X-Flux-Node-Secret", httpNodeSecret)
 
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -169,6 +171,7 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Config-Reporter/1.0")
+	req.Header.Set("X-Flux-Node-Secret", httpNodeSecret)
 
 	client := &http.Client{
 		Timeout: 10 * time.Second, // 配置上报可以稍长一些

@@ -68,10 +68,16 @@ public class WebSocketServer extends TextWebSocketHandler {
     public void handleTextMessage(WebSocketSession session, TextMessage message) {
         try {
             if (StringUtils.isNoneBlank(message.getPayload())) {
-                
-                String id = session.getAttributes().get("id").toString();
+
                 String type = session.getAttributes().get("type").toString();
                 String nodeSecret = (String) session.getAttributes().get("nodeSecret");
+
+                if (!Objects.equals(type, "1") && !isAuthenticated(session)) {
+                    handleAdminAuthMessage(session, message.getPayload());
+                    return;
+                }
+
+                String id = session.getAttributes().get("id").toString();
 
                 // 尝试解密消息
                 String decryptedPayload = decryptMessageIfNeeded(message.getPayload(), nodeSecret);
@@ -136,6 +142,36 @@ public class WebSocketServer extends TextWebSocketHandler {
             }
         } catch (Exception e) {
             log.info("处理WebSocket消息时发生异常: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleAdminAuthMessage(WebSocketSession session, String payload) {
+        try {
+            JSONObject authMessage = JSONObject.parseObject(payload);
+            if (!"auth".equals(authMessage.getString("type"))) {
+                log.warn("管理员WebSocket未认证即发送非认证消息，sessionId={}", session.getId());
+                session.close(CloseStatus.NOT_ACCEPTABLE.withReason("authentication required"));
+                return;
+            }
+
+            String token = authMessage.getString("token");
+            if (!JwtUtil.validateToken(token)) {
+                log.warn("管理员WebSocket认证失败，sessionId={}", session.getId());
+                session.close(CloseStatus.NOT_ACCEPTABLE.withReason("authentication failed"));
+                return;
+            }
+
+            session.getAttributes().put("id", JwtUtil.getUserIdFromToken(token));
+            session.getAttributes().put("authenticated", true);
+            activeSessions.add(session);
+            sendToUser(session, "{\"type\":\"auth\",\"data\":1}");
+            log.info("管理员WebSocket认证成功，sessionId={}", session.getId());
+        } catch (Exception e) {
+            log.warn("管理员WebSocket认证消息处理失败，sessionId={}, error={}", session.getId(), e.getMessage());
+            try {
+                session.close(CloseStatus.NOT_ACCEPTABLE.withReason("authentication failed"));
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -213,15 +249,18 @@ public class WebSocketServer extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         try {
-            String id = session.getAttributes().get("id").toString();
             String type = session.getAttributes().get("type").toString();
             
             if (!Objects.equals(type, "1")) {
-                // 网页管理员连接
-                activeSessions.add(session);
-                log.info("管理员连接建立，sessionId: {}", session.getId());
+                if (isAuthenticated(session)) {
+                    activeSessions.add(session);
+                    log.info("管理员连接建立，sessionId: {}", session.getId());
+                } else {
+                    log.info("管理员连接建立，等待认证，sessionId: {}", session.getId());
+                }
             } else {
                 // 客户端节点连接
+                String id = session.getAttributes().get("id").toString();
                 Long nodeId = Long.valueOf(id);
                 String version = (String) session.getAttributes().get("nodeVersion");
                 String http = (String) session.getAttributes().get("http");
@@ -312,10 +351,11 @@ public class WebSocketServer extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         try {
-            String id = session.getAttributes().get("id").toString();
             String type = session.getAttributes().get("type").toString();
             String sessionId = session.getId();
             
+            Object rawId = session.getAttributes().get("id");
+            String id = rawId == null ? "" : rawId.toString();
             log.info("连接关闭，ID: {}, 类型: {}, 状态: {}", id, type, status);
             
             if (!Objects.equals(type, "1")) {
@@ -490,6 +530,10 @@ public class WebSocketServer extends TextWebSocketHandler {
             }
             return result;
         }
+    }
+
+    private boolean isAuthenticated(WebSocketSession session) {
+        return Boolean.TRUE.equals(session.getAttributes().get("authenticated"));
     }
 
     

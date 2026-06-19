@@ -13,7 +13,6 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@CrossOrigin
 @RequestMapping("/api/v1/open_api")
 public class OpenApiController extends BaseController {
 

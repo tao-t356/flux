@@ -6,26 +6,32 @@ export type SiteConfig = typeof siteConfig;
 const CACHE_PREFIX = 'vite_config_';
 const VERSION = "2.0.7-beta";
 const APP_VERSION = "1.0.3";
+const DEFAULT_APP_NAME = "爱转角转发面板";
+const LEGACY_APP_NAMES = ["flux", "Flux", "flux-panel"];
+
+const isLegacyAppName = (value: string | null): boolean => {
+  return value !== null && LEGACY_APP_NAMES.includes(value);
+};
 
 const getInitialConfig = () => {
   if (typeof window === 'undefined') {
     return {
-      name: "flux",
+      name: DEFAULT_APP_NAME,
       version: VERSION,
       app_version: APP_VERSION,
     };
   }
 
   const cachedAppName = localStorage.getItem(CACHE_PREFIX + 'app_name');
-    if (cachedAppName) {
-      return {
-        name: cachedAppName,
-        version: VERSION,
-        app_version: APP_VERSION,
-      };
-    }
+  if (cachedAppName && !isLegacyAppName(cachedAppName)) {
+    return {
+      name: cachedAppName,
+      version: VERSION,
+      app_version: APP_VERSION,
+    };
+  }
   return {
-    name: "flux",
+    name: DEFAULT_APP_NAME,
     version: VERSION,
     app_version: APP_VERSION,
   };
@@ -69,7 +75,11 @@ export const configCache = {
 export const getCachedConfig = async (key: string): Promise<string | null> => {
   const cachedValue = configCache.get(key);
   if (cachedValue !== null) {
-    return cachedValue;
+    if (key === 'app_name' && isLegacyAppName(cachedValue)) {
+      configCache.remove(key);
+    } else {
+      return cachedValue;
+    }
   }
 
   const response = await getConfigByName(key);

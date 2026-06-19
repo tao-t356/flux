@@ -198,6 +198,9 @@ get_config_params() {
   read -p "后端端口（默认 6365）: " BACKEND_PORT
   BACKEND_PORT=${BACKEND_PORT:-6365}
 
+  read -p "允许跨域来源（默认 *，生产建议填 https://你的域名，多个用英文逗号分隔）: " CORS_ALLOWED_ORIGINS
+  CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+
   # 生成JWT密钥
   JWT_SECRET=$(generate_random)
 }
@@ -224,7 +227,7 @@ install_panel() {
   cat > .env <<EOF
 JWT_SECRET=$JWT_SECRET
 JWT_EXPIRE_DAYS=${JWT_EXPIRE_DAYS:-7}
-CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
 BACKEND_IMAGE=$BACKEND_IMAGE
@@ -245,7 +248,7 @@ EOF
   echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
   echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
   echo "📚 文档地址: https://tes.cc/guide.html"
-  echo "💡 默认管理员账号: admin_user / admin_user"
+  echo "💡 默认管理员账号: facker668 / wohenshuai"
   echo "⚠️  登录后请立即修改默认密码！"
 
 

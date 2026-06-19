@@ -78,7 +78,7 @@ struct WebView: UIViewRepresentable {
         private func handleGetPanelAddresses(message: WKScriptMessage) {
             let callbackName: String
             if let cb = message.body as? String, !cb.isEmpty {
-                callbackName = cb
+                callbackName = safeCallbackName(cb)
             } else {
                 callbackName = "setPanelAddresses"
             }
@@ -86,6 +86,14 @@ struct WebView: UIViewRepresentable {
             let addresses = loadAddressesJSONString()
             let js = "window.\(callbackName)(\(addresses));"
             evaluate(js: js)
+        }
+
+        private func safeCallbackName(_ name: String) -> String {
+            let pattern = #"^[A-Za-z_$][A-Za-z0-9_$]*$"#
+            if name.range(of: pattern, options: .regularExpression) != nil {
+                return name
+            }
+            return "setPanelAddresses"
         }
 
         private func handleSavePanelAddress(message: WKScriptMessage) {
