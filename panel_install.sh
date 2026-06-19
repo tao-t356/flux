@@ -415,6 +415,71 @@ normalize_cors_allowed_origins() {
   echo "${result:-*}"
 }
 
+format_access_host() {
+  local host="$1"
+  host=$(printf '%s' "$host" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  host="${host#http://}"
+  host="${host#https://}"
+  host="${host%%/*}"
+
+  if [[ "$host" =~ ^\[([^]]+)\](:[0-9]+)?$ ]]; then
+    host="${BASH_REMATCH[1]}"
+  elif [[ "$host" =~ ^([^:]+):[0-9]+$ ]]; then
+    host="${BASH_REMATCH[1]}"
+  fi
+
+  if [[ "$host" == *:* && "$host" != \[* ]]; then
+    echo "[$host]"
+  else
+    echo "$host"
+  fi
+}
+
+detect_public_host() {
+  local host
+  local url
+
+  if [ -n "${FLUX_PANEL_ACCESS_HOST:-}" ]; then
+    format_access_host "$FLUX_PANEL_ACCESS_HOST"
+    return 0
+  fi
+  if [ -n "${PANEL_ACCESS_HOST:-}" ]; then
+    format_access_host "$PANEL_ACCESS_HOST"
+    return 0
+  fi
+
+  for url in \
+    "https://api.ipify.org" \
+    "https://ipv4.icanhazip.com" \
+    "https://ifconfig.me/ip"
+  do
+    host=$(curl -4 -fsSL --connect-timeout 5 "$url" 2>/dev/null | tr -d '[:space:]' || true)
+    if [ -n "$host" ]; then
+      format_access_host "$host"
+      return 0
+    fi
+  done
+
+  for url in \
+    "https://api64.ipify.org" \
+    "https://ifconfig.co/ip"
+  do
+    host=$(curl -fsSL --connect-timeout 5 "$url" 2>/dev/null | tr -d '[:space:]' || true)
+    if [ -n "$host" ]; then
+      format_access_host "$host"
+      return 0
+    fi
+  done
+
+  host=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+  if [ -n "$host" ]; then
+    format_access_host "$host"
+    return 0
+  fi
+
+  echo "服务器IP"
+}
+
 # 删除脚本自身
 delete_self() {
   if [ "${KEEP_INSTALL_SCRIPT:-0}" = "1" ]; then
@@ -508,9 +573,7 @@ EOF
   $DOCKER_CMD up -d
 
   echo "🎉 部署完成"
-  echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
-  echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
-  echo "📚 文档地址: https://tes.cc/guide.html"
+  echo "🌐 访问地址: http://$(detect_public_host):$FRONTEND_PORT"
   echo "💡 默认管理员账号: facker668 / wohenshuai"
   echo "⚠️  登录后请立即修改默认密码！"
 
