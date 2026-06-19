@@ -1,92 +1,103 @@
 # 爱转角转发面板
 
-# 赞助商
-<p align="center">
-  <a href="https://vps.town" style="margin: 0 20px; text-align:center;">
-    <img src="./doc/vpstown.png" width="300">
-  </a>
+爱转角转发面板基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 二次开发，提供面板端、节点端、Web 前端和移动端壳应用。
 
-  <a href="https://whmcs.as211392.com" style="margin: 0 20px; text-align:center;">
-    <img src="./doc/as211392.png" width="300">
-  </a>
-</p>
-
-
-本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
----
 ## 特性
 
-- 支持按 **隧道账号级别** 管理流量转发数量，可用于用户/隧道配额控制
-- 支持 **TCP** 和 **UDP** 协议的转发
-- 支持两种转发模式：**端口转发** 与 **隧道转发**
-- 可针对 **指定用户的指定隧道进行限速** 设置
-- 支持配置 **单向或双向流量计费方式**，灵活适配不同计费模型
-- 提供灵活的转发策略配置，适用于多种网络场景
-
+- 支持按隧道账号级别管理流量转发数量，可用于用户/隧道配额控制
+- 支持 TCP 和 UDP 协议转发
+- 支持端口转发与隧道转发
+- 支持指定用户、指定隧道的限速配置
+- 支持单向或双向流量计费方式
+- 支持节点状态、流量统计和基础诊断
+- 默认启用更安全的节点通信配置
 
 ## 部署流程
----
-### Docker Compose部署
-#### 快速部署
-面板端(稳定版)：
-```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-节点端(稳定版)：
-```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
+### 方式一：Docker Compose
+
+```bash
+git clone https://github.com/tao-t356/flux.git
+cd flux
 ```
 
-面板端(开发版)：
+创建 `.env`：
+
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+docker build -t aizhuanjiao-backend:local springboot-backend
+docker build -t aizhuanjiao-frontend:local vite-frontend
+
+cat > .env <<EOF
+JWT_SECRET=$(openssl rand -hex 32)
+JWT_EXPIRE_DAYS=7
+CORS_ALLOWED_ORIGINS=*
+FRONTEND_PORT=6366
+BACKEND_PORT=6365
+BACKEND_IMAGE=aizhuanjiao-backend:local
+FRONTEND_IMAGE=aizhuanjiao-frontend:local
+FLUX_PANEL_VERSION=2.0.7-beta
+FLUX_PANEL_REPO=tao-t356/flux
+FLUX_FORCE_SECURE_NODE_TRANSPORT=true
+LOGIN_MAX_ATTEMPTS=5
+LOGIN_WINDOW_SECONDS=300
+LOGIN_LOCK_SECONDS=900
+EOF
 ```
-节点端(开发版)：
+
+启动：
+
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-
+docker compose -f docker-compose-v4.yml up -d
 ```
 
-#### 默认管理员账号
+如果服务器支持 IPv6，可改用：
 
-- **账号**: facker668
-- **密码**: wohenshuai
+```bash
+docker compose -f docker-compose-v6.yml up -d
+```
 
-> ⚠️ 首次登录后请立即修改默认密码！
+### 方式二：一键脚本
 
+一键脚本会从当前仓库的 Release 下载对应文件。使用前请确保 Release 中已有需要的 compose 文件和节点二进制文件。
+
+面板端：
+
+```bash
+curl -L https://raw.githubusercontent.com/tao-t356/flux/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && FLUX_PANEL_REPO=tao-t356/flux ./panel_install.sh
+```
+
+节点端：
+
+```bash
+curl -L https://raw.githubusercontent.com/tao-t356/flux/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && FLUX_PANEL_REPO=tao-t356/flux ./install.sh
+```
+
+## 默认管理员账号
+
+- 账号：`facker668`
+- 密码：`wohenshuai`
+
+首次登录后请立即修改默认账号和密码。
+
+## 目录结构
+
+- `springboot-backend`：后端服务
+- `vite-frontend`：前端面板
+- `go-gost`：节点端程序
+- `android-app`：Android 壳应用
+- `ios-app`：iOS 壳应用
 
 ## 免责声明
 
-本项目仅供个人学习与研究使用，基于开源项目进行二次开发。  
+本项目仅供个人学习与研究使用，基于开源项目进行二次开发。
 
-使用本项目所带来的任何风险均由使用者自行承担，包括但不限于：  
+使用本项目所带来的任何风险均由使用者自行承担，包括但不限于：
 
-- 配置不当或使用错误导致的服务异常或不可用；  
-- 使用本项目引发的网络攻击、封禁、滥用等行为；  
-- 服务器因使用本项目被入侵、渗透、滥用导致的数据泄露、资源消耗或损失；  
-- 因违反当地法律法规所产生的任何法律责任。  
+- 配置不当或使用错误导致的服务异常或不可用
+- 使用本项目引发的网络攻击、封禁、滥用等行为
+- 服务器因使用本项目被入侵、渗透、滥用导致的数据泄露、资源消耗或损失
+- 因违反当地法律法规所产生的任何法律责任
 
-本项目为开源的流量转发工具，仅限合法、合规用途。  
-使用者必须确保其使用行为符合所在国家或地区的法律法规。  
+本项目为开源的流量转发工具，仅限合法、合规用途。使用者必须确保其使用行为符合所在国家或地区的法律法规。
 
-**作者不对因使用本项目导致的任何法律责任、经济损失或其他后果承担责任。**  
-**禁止将本项目用于任何违法或未经授权的行为，包括但不限于网络攻击、数据窃取、非法访问等。**  
-
-如不同意上述条款，请立即停止使用本项目。  
-
-作者对因使用本项目所造成的任何直接或间接损失概不负责，亦不提供任何形式的担保、承诺或技术支持。  
-
-
-请务必在合法、合规、安全的前提下使用本项目。  
-
----
-## ⭐ 喝杯咖啡！（USDT）
-
-| 网络       | 地址                                                                 |
-|------------|----------------------------------------------------------------------|
-| BNB(BEP20) | `0x755492c03728851bbf855daa28a1e089f9aca4d1`                          |
-| TRC20      | `TYh2L3xxXpuJhAcBWnt3yiiADiCSJLgUm7`                                  |
-| Aptos      | `0xf2f9fb14749457748506a8281628d556e8540d1eb586d202cd8b02b99d369ef8`  |
-
-[![Star History Chart](https://api.star-history.com/svg?repos=bqlpfy/flux-panel&type=Date)](https://www.star-history.com/#bqlpfy/flux-panel&Date)
+作者不对因使用本项目导致的任何法律责任、经济损失或其他后果承担责任，亦不提供任何形式的担保、承诺或技术支持。
