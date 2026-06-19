@@ -100,17 +100,17 @@ detect_docker_cmd() {
 install_base_tools() {
   if command -v apt-get &> /dev/null; then
     apt-get update
-    apt-get install -y ca-certificates curl gnupg lsb-release tar
+    apt-get install -y ca-certificates curl gnupg lsb-release
   elif command -v dnf &> /dev/null; then
-    dnf install -y ca-certificates curl gnupg tar
+    dnf install -y ca-certificates curl gnupg
   elif command -v yum &> /dev/null; then
-    yum install -y ca-certificates curl gnupg tar
+    yum install -y ca-certificates curl gnupg
   elif command -v apk &> /dev/null; then
-    apk add --no-cache ca-certificates curl tar
+    apk add --no-cache ca-certificates curl
   elif command -v zypper &> /dev/null; then
-    zypper --non-interactive install ca-certificates curl tar
+    zypper --non-interactive install ca-certificates curl
   elif command -v pacman &> /dev/null; then
-    pacman -Sy --noconfirm ca-certificates curl tar
+    pacman -Sy --noconfirm ca-certificates curl
   fi
 }
 
@@ -178,50 +178,7 @@ install_docker() {
   install_compose_plugin
 }
 
-build_panel_images_from_source() {
-  local build_dir
-  local archive_path
-  local archive_url
-  local source_dir
-
-  build_dir="/tmp/aizhuanjiao-panel-build-$$"
-  archive_path="$build_dir/source.tar.gz"
-  archive_url=$(with_github_proxy "https://github.com/${REPO}/archive/refs/heads/${RAW_BRANCH}.tar.gz")
-
-  if ! command -v tar &> /dev/null; then
-    install_base_tools
-  fi
-
-  mkdir -p "$build_dir"
-  echo "🔽 正在下载源码用于本地构建镜像..."
-  curl -fL --retry 3 --connect-timeout 15 -o "$archive_path" "$archive_url"
-  tar -xzf "$archive_path" -C "$build_dir"
-  source_dir=$(find "$build_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-
-  if [ -z "$source_dir" ] || [ ! -d "$source_dir/springboot-backend" ] || [ ! -d "$source_dir/vite-frontend" ]; then
-    echo "❌ 源码下载成功，但未找到构建目录。"
-    rm -rf "$build_dir"
-    exit 1
-  fi
-
-  BACKEND_IMAGE="aizhuanjiao-backend:${VERSION}"
-  FRONTEND_IMAGE="aizhuanjiao-frontend:${VERSION}"
-
-  echo "🏗️ 构建后端镜像：$BACKEND_IMAGE"
-  docker build -t "$BACKEND_IMAGE" "$source_dir/springboot-backend"
-
-  echo "🏗️ 构建前端镜像：$FRONTEND_IMAGE"
-  docker build -t "$FRONTEND_IMAGE" "$source_dir/vite-frontend"
-
-  rm -rf "$build_dir"
-}
-
 ensure_panel_images() {
-  if [ "${FLUX_BUILD_LOCAL_IMAGES:-0}" = "1" ]; then
-    build_panel_images_from_source
-    return 0
-  fi
-
   if docker image inspect "$BACKEND_IMAGE" >/dev/null 2>&1 && docker image inspect "$FRONTEND_IMAGE" >/dev/null 2>&1; then
     echo "✅ 检测到本地面板镜像"
     return 0
@@ -233,8 +190,10 @@ ensure_panel_images() {
     return 0
   fi
 
-  echo "⚠️ 面板镜像拉取失败，改为在本机自动构建镜像..."
-  build_panel_images_from_source
+  echo "❌ 面板镜像拉取失败。请等待 GitHub Actions 构建完成，或确认 GHCR 镜像已公开："
+  echo "   $BACKEND_IMAGE"
+  echo "   $FRONTEND_IMAGE"
+  exit 1
 }
 
 # 检查 docker-compose 或 docker compose 命令，可在安装面板时自动安装
@@ -542,6 +501,7 @@ FLUX_FORCE_SECURE_NODE_TRANSPORT=${FLUX_FORCE_SECURE_NODE_TRANSPORT:-true}
 LOGIN_MAX_ATTEMPTS=${LOGIN_MAX_ATTEMPTS:-5}
 LOGIN_WINDOW_SECONDS=${LOGIN_WINDOW_SECONDS:-300}
 LOGIN_LOCK_SECONDS=${LOGIN_LOCK_SECONDS:-900}
+JAVA_OPTS="${JAVA_OPTS:--Xms128m -Xmx384m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai}"
 EOF
 
   echo "🚀 启动 docker 服务..."

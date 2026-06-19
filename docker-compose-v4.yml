@@ -16,7 +16,7 @@ services:
       LOGIN_WINDOW_SECONDS: "${LOGIN_WINDOW_SECONDS:-300}"
       LOGIN_LOCK_SECONDS: "${LOGIN_LOCK_SECONDS:-900}"
       LOG_DIR: /app/logs
-      JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
+      JAVA_OPTS: "${JAVA_OPTS:--Xms128m -Xmx384m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai}"
     ports:
       - "${BACKEND_PORT}:6365"
     volumes:

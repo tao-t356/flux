@@ -41,6 +41,7 @@ FLUX_FORCE_SECURE_NODE_TRANSPORT=true
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_WINDOW_SECONDS=300
 LOGIN_LOCK_SECONDS=900
+JAVA_OPTS="-Xms128m -Xmx384m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
 EOF
 ```
 
@@ -66,7 +67,7 @@ docker compose -f docker-compose-v6.yml up -d
 curl -L https://raw.githubusercontent.com/tao-t356/flux/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && FLUX_PANEL_REPO=tao-t356/flux ./panel_install.sh
 ```
 
-安装脚本会自动安装 Docker、自动分配前端/后端端口，并默认允许跨域来源为 `*`。需要固定配置时，可提前设置 `FRONTEND_PORT`、`BACKEND_PORT`、`CORS_ALLOWED_ORIGINS` 环境变量。若 Release 文件暂未生成，脚本会自动从 `main` 分支下载 compose 配置；若镜像暂未发布，会自动下载源码并在本机 Docker 构建镜像。
+安装脚本会自动安装 Docker、自动分配前端/后端端口，并默认允许跨域来源为 `*`。需要固定配置时，可提前设置 `FRONTEND_PORT`、`BACKEND_PORT`、`CORS_ALLOWED_ORIGINS` 环境变量。若 Release 文件暂未生成，脚本会自动从 `main` 分支下载 compose 配置。
 
 节点端：
 
