@@ -654,6 +654,68 @@ set_env_value() {
   fi
 }
 
+env_value_or_default() {
+  local key="$1"
+  local default_value="$2"
+  local current_value
+
+  current_value=$(read_env_value "$key" || true)
+  if [ -n "$current_value" ]; then
+    echo "$current_value"
+  else
+    echo "$default_value"
+  fi
+}
+
+ensure_panel_env_file() {
+  local jwt_secret
+  local cors_allowed_origins
+  local java_opts_value
+
+  load_panel_ports_from_env
+  if ! is_valid_port "$FRONTEND_PORT"; then
+    echo "❌ FRONTEND_PORT 必须是 1-65535 之间的数字。"
+    exit 1
+  fi
+  if ! is_valid_port "$BACKEND_PORT"; then
+    echo "❌ BACKEND_PORT 必须是 1-65535 之间的数字。"
+    exit 1
+  fi
+  if [ "$BACKEND_PORT" = "$FRONTEND_PORT" ]; then
+    echo "❌ BACKEND_PORT 不能和 FRONTEND_PORT 使用同一个端口。"
+    exit 1
+  fi
+
+  jwt_secret=$(env_value_or_default JWT_SECRET "${JWT_SECRET:-}")
+  if [ -z "$jwt_secret" ]; then
+    jwt_secret=$(generate_random)
+  fi
+  cors_allowed_origins=$(normalize_cors_allowed_origins "$(env_value_or_default CORS_ALLOWED_ORIGINS "${CORS_ALLOWED_ORIGINS:-*}")")
+  java_opts_value=$(env_value_or_default JAVA_OPTS "${JAVA_OPTS:--Xms128m -Xmx384m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai}")
+
+  umask 077
+  set_env_value JWT_SECRET "$jwt_secret"
+  set_env_value JWT_EXPIRE_DAYS "$(env_value_or_default JWT_EXPIRE_DAYS "${JWT_EXPIRE_DAYS:-7}")"
+  set_env_value CORS_ALLOWED_ORIGINS "$cors_allowed_origins"
+  set_env_value FRONTEND_PORT "$FRONTEND_PORT"
+  set_env_value BACKEND_PORT "$BACKEND_PORT"
+  set_env_value FLUX_PANEL_ACCESS_HOST "$PANEL_ACCESS_HOST_VALUE"
+  set_env_value BACKEND_IMAGE "$BACKEND_IMAGE"
+  set_env_value FRONTEND_IMAGE "$FRONTEND_IMAGE"
+  set_env_value FLUX_PANEL_VERSION "$VERSION"
+  set_env_value FLUX_PANEL_REPO "$REPO"
+  set_env_value FLUX_GITHUB_PROXY "$GITHUB_PROXY"
+  set_env_value FLUX_FORCE_SECURE_NODE_TRANSPORT "$(env_value_or_default FLUX_FORCE_SECURE_NODE_TRANSPORT "${FLUX_FORCE_SECURE_NODE_TRANSPORT:-true}")"
+  set_env_value LOGIN_MAX_ATTEMPTS "$(env_value_or_default LOGIN_MAX_ATTEMPTS "${LOGIN_MAX_ATTEMPTS:-5}")"
+  set_env_value LOGIN_WINDOW_SECONDS "$(env_value_or_default LOGIN_WINDOW_SECONDS "${LOGIN_WINDOW_SECONDS:-300}")"
+  set_env_value LOGIN_LOCK_SECONDS "$(env_value_or_default LOGIN_LOCK_SECONDS "${LOGIN_LOCK_SECONDS:-900}")"
+  set_env_value JAVA_OPTS "\"$java_opts_value\""
+
+  echo "✅ 已检查并补齐 .env 配置"
+  echo "✅ 前端端口：$FRONTEND_PORT"
+  echo "✅ 后端端口：$BACKEND_PORT"
+}
+
 select_access_host() {
   local prompt_mode="${1:-always}"
   local default_host
@@ -899,7 +961,7 @@ update_panel() {
   check_docker
   load_panel_ports_from_env
   select_access_host if-missing
-  set_env_value FLUX_PANEL_ACCESS_HOST "$PANEL_ACCESS_HOST_VALUE"
+  ensure_panel_env_file
   open_local_firewall_ports "$FRONTEND_PORT" "$BACKEND_PORT"
 
   echo "🔽 下载最新配置文件..."
