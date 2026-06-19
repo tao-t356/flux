@@ -75,7 +75,7 @@ public class FlowController extends BaseController {
     @Lazy
     ChainTunnelService chainTunnelService;
 
-    @Value("${flux.security.force-secure-node-transport:true}")
+    @Value("${flux.security.force-secure-node-transport:false}")
     private boolean forceSecureNodeTransport;
 
     /**

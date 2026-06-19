@@ -35,7 +35,7 @@ public final class SecureTransportUtil {
         }
 
         String hostPort = GostUtil.processServerAddress(address);
-        return forceSecure ? "https://" + hostPort : hostPort;
+        return (forceSecure ? "https://" : "http://") + hostPort;
     }
 
     public static boolean isSecureRequest(HttpServletRequest request) {

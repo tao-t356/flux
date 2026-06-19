@@ -41,7 +41,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     @Resource
     ChainTunnelService chainTunnelService;
 
-    @Value("${flux.release-version:2.0.8-beta}")
+    @Value("${flux.release-version:2.0.9-beta}")
     private String releaseVersion;
 
     @Value("${flux.release-repo:tao-t356/flux}")
@@ -50,8 +50,14 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     @Value("${flux.github-proxy:}")
     private String githubProxy;
 
-    @Value("${flux.security.force-secure-node-transport:true}")
+    @Value("${flux.security.force-secure-node-transport:false}")
     private boolean forceSecureNodeTransport;
+
+    @Value("${flux.panel.access-host:}")
+    private String panelAccessHost;
+
+    @Value("${flux.panel.backend-port:6365}")
+    private String panelBackendPort;
 
 
     @Override
@@ -135,23 +141,62 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         if (node == null) {
             return R.err("节点不存在");
         }
-        ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
-        if (viteConfig == null) return R.err("请先前往网站配置中设置ip");
+        String panelBackendAddress = resolvePanelBackendAddress();
+        if (StrUtil.isBlank(panelBackendAddress)) {
+            return R.err("未检测到面板后端地址，请重新运行面板更新脚本");
+        }
         StringBuilder command = new StringBuilder();
         command.append("curl -fL --retry 3 ")
                 .append(shellQuote(buildInstallScriptUrl()))
                 .append(" -o ./install.sh && chmod +x ./install.sh && ");
         String processedServerAddr;
         try {
-            processedServerAddr = SecureTransportUtil.normalizePanelHttpAddress(viteConfig.getValue(), forceSecureNodeTransport);
+            processedServerAddr = SecureTransportUtil.normalizePanelHttpAddress(panelBackendAddress, forceSecureNodeTransport);
         } catch (IllegalArgumentException e) {
             return R.err(e.getMessage());
+        }
+        if (processedServerAddr.toLowerCase().startsWith("http://")) {
+            command.append("FLUX_ALLOW_INSECURE_NODE_TRANSPORT=1 ");
         }
         command.append("./install.sh")
                 .append(" -a ").append(shellQuote(processedServerAddr))  // 服务器地址
                 .append(" -s ").append(shellQuote(node.getSecret()));    // 节点密钥
         return R.ok(command);
 
+    }
+
+    private String resolvePanelBackendAddress() {
+        ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
+        if (viteConfig != null && StrUtil.isNotBlank(viteConfig.getValue())) {
+            return viteConfig.getValue();
+        }
+        return buildDefaultPanelBackendAddress();
+    }
+
+    private String buildDefaultPanelBackendAddress() {
+        if (StrUtil.isBlank(panelAccessHost)) {
+            return "";
+        }
+
+        String host = panelAccessHost.trim()
+                .replaceFirst("(?i)^https?://", "")
+                .replaceAll("/.*$", "");
+        if (StrUtil.isBlank(host)) {
+            return "";
+        }
+        if (hasExplicitPort(host)) {
+            return host;
+        }
+        return host + ":" + StrUtil.blankToDefault(panelBackendPort, "6365");
+    }
+
+    private boolean hasExplicitPort(String host) {
+        if (host.startsWith("[")) {
+            return host.matches("^\\[[^]]+]:\\d+$");
+        }
+        int firstColon = host.indexOf(':');
+        int lastColon = host.lastIndexOf(':');
+        return firstColon > -1 && firstColon == lastColon && lastColon < host.length() - 1;
     }
 
 

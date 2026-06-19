@@ -23,7 +23,7 @@ build_download_url() {
 }
 
 # 下载地址
-VERSION="${FLUX_PANEL_VERSION:-2.0.8-beta}"
+VERSION="${FLUX_PANEL_VERSION:-2.0.9-beta}"
 REPO="${FLUX_PANEL_REPO:-tao-t356/flux}"
 RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 GITHUB_PROXY="${FLUX_GITHUB_PROXY:-}"
@@ -188,7 +188,12 @@ normalize_server_addr() {
       exit 1
       ;;
     *)
-      SERVER_ADDR="https://$SERVER_ADDR"
+      if [[ "$ALLOW_INSECURE_NODE_TRANSPORT" == "1" || "$ALLOW_INSECURE_NODE_TRANSPORT" == "true" ]]; then
+        SERVER_ADDR="http://$SERVER_ADDR"
+        echo "⚠️ 已允许明文节点通信: $SERVER_ADDR"
+      else
+        SERVER_ADDR="https://$SERVER_ADDR"
+      fi
       ;;
   esac
 }
@@ -271,6 +276,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=$INSTALL_DIR
+Environment=FLUX_ALLOW_INSECURE_NODE_TRANSPORT=$ALLOW_INSECURE_NODE_TRANSPORT
 ExecStart=$INSTALL_DIR/flux_agent
 Restart=on-failure
 RestartSec=3

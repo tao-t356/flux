@@ -30,7 +30,7 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
     @Resource
     NodeService nodeService;
 
-    @Value("${flux.security.force-secure-node-transport:true}")
+    @Value("${flux.security.force-secure-node-transport:false}")
     private boolean forceSecureNodeTransport;
 
     @Override
