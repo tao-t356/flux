@@ -24,17 +24,15 @@ cd flux
 创建 `.env`：
 
 ```bash
-docker build -t aizhuanjiao-backend:local springboot-backend
-docker build -t aizhuanjiao-frontend:local vite-frontend
-
 cat > .env <<EOF
 JWT_SECRET=$(openssl rand -hex 32)
 JWT_EXPIRE_DAYS=7
 CORS_ALLOWED_ORIGINS=*
 FRONTEND_PORT=6366
 BACKEND_PORT=6365
-BACKEND_IMAGE=aizhuanjiao-backend:local
-FRONTEND_IMAGE=aizhuanjiao-frontend:local
+FLUX_PANEL_ACCESS_HOST=你的域名或服务器IP
+BACKEND_IMAGE=ghcr.io/tao-t356/flux-springboot-backend:2.0.8-beta
+FRONTEND_IMAGE=ghcr.io/tao-t356/flux-vite-frontend:2.0.8-beta
 FLUX_PANEL_VERSION=2.0.8-beta
 FLUX_PANEL_REPO=tao-t356/flux
 FLUX_FORCE_SECURE_NODE_TRANSPORT=true
@@ -67,7 +65,7 @@ docker compose -f docker-compose-v6.yml up -d
 curl -L https://raw.githubusercontent.com/tao-t356/flux/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && FLUX_PANEL_REPO=tao-t356/flux ./panel_install.sh
 ```
 
-安装脚本会自动安装 Docker、自动分配前端/后端端口，并默认允许跨域来源为 `*`。需要固定配置时，可提前设置 `FRONTEND_PORT`、`BACKEND_PORT`、`CORS_ALLOWED_ORIGINS`、`FLUX_PANEL_ACCESS_HOST` 环境变量。若 Release 文件暂未生成，脚本会自动从 `main` 分支下载 compose 配置。
+安装脚本会自动安装 Docker、自动分配前端/后端端口，并提示填写访问域名或服务器 IP，用于生成访问地址和预填“面板后端地址”。没有域名时直接回车使用自动检测到的公网 IP。需要固定配置时，可提前设置 `FRONTEND_PORT`、`BACKEND_PORT`、`CORS_ALLOWED_ORIGINS`、`FLUX_PANEL_ACCESS_HOST` 环境变量。若 Release 文件暂未生成，脚本会自动从 `main` 分支下载 compose 配置。
 
 节点端：
 

@@ -435,9 +435,8 @@ format_access_host() {
   fi
 }
 
-detect_public_host() {
+get_saved_access_host() {
   local host
-  local url
 
   if [ -n "${FLUX_PANEL_ACCESS_HOST:-}" ]; then
     format_access_host "$FLUX_PANEL_ACCESS_HOST"
@@ -447,6 +446,25 @@ detect_public_host() {
     format_access_host "$PANEL_ACCESS_HOST"
     return 0
   fi
+
+  host=$(read_env_value FLUX_PANEL_ACCESS_HOST || true)
+  if [ -n "$host" ]; then
+    format_access_host "$host"
+    return 0
+  fi
+
+  host=$(read_env_value PANEL_ACCESS_HOST || true)
+  if [ -n "$host" ]; then
+    format_access_host "$host"
+    return 0
+  fi
+
+  return 1
+}
+
+detect_machine_public_host() {
+  local host
+  local url
 
   for url in \
     "https://api.ipify.org" \
@@ -480,6 +498,18 @@ detect_public_host() {
   echo "服务器IP"
 }
 
+detect_public_host() {
+  local host
+
+  host=$(get_saved_access_host || true)
+  if [ -n "$host" ]; then
+    echo "$host"
+    return 0
+  fi
+
+  detect_machine_public_host
+}
+
 read_env_value() {
   local key="$1"
   if [ ! -f ".env" ]; then
@@ -495,6 +525,74 @@ read_env_value() {
       exit
     }
   ' .env
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local tmp_file
+
+  tmp_file=".env.$$"
+  if [ -f ".env" ]; then
+    awk -v key="$key" -v value="$value" '
+      BEGIN { found = 0 }
+      $0 ~ "^" key "=" {
+        print key "=" value
+        found = 1
+        next
+      }
+      { print }
+      END {
+        if (!found) {
+          print key "=" value
+        }
+      }
+    ' .env > "$tmp_file" && mv "$tmp_file" .env
+  else
+    printf '%s=%s\n' "$key" "$value" > .env
+  fi
+}
+
+select_access_host() {
+  local prompt_mode="${1:-always}"
+  local default_host
+  local input_host
+  local saved_host
+
+  if [ -n "${FLUX_PANEL_ACCESS_HOST:-}" ] || [ -n "${PANEL_ACCESS_HOST:-}" ]; then
+    PANEL_ACCESS_HOST_VALUE=$(detect_public_host)
+    export PANEL_ACCESS_HOST="$PANEL_ACCESS_HOST_VALUE"
+    echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
+    return 0
+  fi
+
+  saved_host=$(get_saved_access_host || true)
+  if [ "$prompt_mode" = "if-missing" ] && [ -n "$saved_host" ]; then
+    PANEL_ACCESS_HOST_VALUE="$saved_host"
+    export PANEL_ACCESS_HOST="$PANEL_ACCESS_HOST_VALUE"
+    echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
+    return 0
+  fi
+
+  if [ -n "$saved_host" ]; then
+    default_host="$saved_host"
+  else
+    default_host=$(detect_machine_public_host)
+  fi
+
+  echo "🌐 请填写面板访问域名或服务器 IP，用于生成访问地址和预填面板后端地址。"
+  echo "   已解析到本机的域名可直接填写；没有域名直接回车使用自动检测值。"
+  read -p "访问域名或服务器 IP（默认 $default_host）: " input_host
+  input_host="${input_host:-$default_host}"
+  PANEL_ACCESS_HOST_VALUE=$(format_access_host "$input_host")
+
+  if [ -z "$PANEL_ACCESS_HOST_VALUE" ]; then
+    echo "❌ 访问域名/IP 不能为空。"
+    exit 1
+  fi
+
+  export PANEL_ACCESS_HOST="$PANEL_ACCESS_HOST_VALUE"
+  echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
 }
 
 js_escape() {
@@ -585,6 +683,8 @@ get_config_params() {
   CORS_ALLOWED_ORIGINS=$(normalize_cors_allowed_origins "${CORS_ALLOWED_ORIGINS:-*}")
   echo "✅ 允许跨域来源：$CORS_ALLOWED_ORIGINS"
 
+  select_access_host always
+
   # 生成JWT密钥
   JWT_SECRET=$(generate_random)
 }
@@ -614,6 +714,7 @@ JWT_EXPIRE_DAYS=${JWT_EXPIRE_DAYS:-7}
 CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
+FLUX_PANEL_ACCESS_HOST=$PANEL_ACCESS_HOST_VALUE
 BACKEND_IMAGE=$BACKEND_IMAGE
 FRONTEND_IMAGE=$FRONTEND_IMAGE
 FLUX_PANEL_VERSION=$VERSION
@@ -628,7 +729,7 @@ EOF
 
   echo "🚀 启动 docker 服务..."
   $DOCKER_CMD up -d
-  PANEL_ACCESS_HOST_VALUE=$(detect_public_host)
+  PANEL_ACCESS_HOST_VALUE="${PANEL_ACCESS_HOST_VALUE:-$(detect_public_host)}"
   write_frontend_runtime_config "$PANEL_ACCESS_HOST_VALUE" "$BACKEND_PORT"
 
   echo "🎉 部署完成"
@@ -643,6 +744,8 @@ EOF
 update_panel() {
   echo "🔄 开始更新爱转角转发面板..."
   check_docker
+  select_access_host if-missing
+  set_env_value FLUX_PANEL_ACCESS_HOST "$PANEL_ACCESS_HOST_VALUE"
 
   echo "🔽 下载最新配置文件..."
   download_docker_compose docker-compose.yml
@@ -670,7 +773,7 @@ update_panel() {
 
   echo "🚀 启动更新后的服务..."
   $DOCKER_CMD up -d
-  write_frontend_runtime_config "$(detect_public_host)" "${BACKEND_PORT:-$(read_env_value BACKEND_PORT || true)}"
+  write_frontend_runtime_config "$PANEL_ACCESS_HOST_VALUE" "${BACKEND_PORT:-$(read_env_value BACKEND_PORT || true)}"
 
   # 等待服务启动
   echo "⏳ 等待服务启动..."
