@@ -23,7 +23,7 @@ build_download_url() {
 }
 
 # 下载地址
-VERSION="${FLUX_PANEL_VERSION:-2.0.7-beta}"
+VERSION="${FLUX_PANEL_VERSION:-2.0.8-beta}"
 REPO="${FLUX_PANEL_REPO:-tao-t356/flux}"
 RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 GITHUB_PROXY="${FLUX_GITHUB_PROXY:-}"

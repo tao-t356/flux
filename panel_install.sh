@@ -8,7 +8,7 @@ export LC_ALL=C
 
 
 # 全局下载地址配置
-VERSION="${FLUX_PANEL_VERSION:-2.0.7-beta}"
+VERSION="${FLUX_PANEL_VERSION:-2.0.8-beta}"
 REPO="${FLUX_PANEL_REPO:-tao-t356/flux}"
 RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 RAW_BRANCH="${FLUX_RAW_BRANCH:-main}"
@@ -480,6 +480,63 @@ detect_public_host() {
   echo "服务器IP"
 }
 
+read_env_value() {
+  local key="$1"
+  if [ ! -f ".env" ]; then
+    return 1
+  fi
+
+  awk -F= -v key="$key" '
+    $1 == key {
+      sub(/^[^=]*=/, "")
+      gsub(/^"/, "")
+      gsub(/"$/, "")
+      print
+      exit
+    }
+  ' .env
+}
+
+js_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+write_frontend_runtime_config() {
+  local access_host="${1:-$(detect_public_host)}"
+  local backend_port="${2:-${BACKEND_PORT:-}}"
+  local panel_backend_address
+  local js_access_host
+  local js_backend_port
+  local js_panel_backend_address
+
+  if [ -z "$backend_port" ]; then
+    backend_port=$(read_env_value BACKEND_PORT || true)
+  fi
+  backend_port="${backend_port:-6365}"
+  panel_backend_address="${access_host}:${backend_port}"
+  js_access_host=$(js_escape "$access_host")
+  js_backend_port=$(js_escape "$backend_port")
+  js_panel_backend_address=$(js_escape "$panel_backend_address")
+
+  if ! docker ps --format "{{.Names}}" | grep -q "^vite-frontend$"; then
+    echo "⚠️ 未检测到前端容器，跳过写入前端运行时配置"
+    return 0
+  fi
+
+  if docker exec -i vite-frontend sh -c 'cat > /usr/share/nginx/html/runtime-config.js' <<EOF
+window.AIZHUANJIAO_RUNTIME_CONFIG = {
+  panelBackendAddress: "$js_panel_backend_address",
+  backendHost: "$js_access_host",
+  backendPort: "$js_backend_port"
+};
+EOF
+  then
+    echo "✅ 面板后端地址已预填：$panel_backend_address"
+  else
+    echo "⚠️ 写入前端运行时配置失败，请在网站配置中手动填写：$panel_backend_address"
+  fi
+}
+
 # 删除脚本自身
 delete_self() {
   if [ "${KEEP_INSTALL_SCRIPT:-0}" = "1" ]; then
@@ -571,9 +628,11 @@ EOF
 
   echo "🚀 启动 docker 服务..."
   $DOCKER_CMD up -d
+  PANEL_ACCESS_HOST_VALUE=$(detect_public_host)
+  write_frontend_runtime_config "$PANEL_ACCESS_HOST_VALUE" "$BACKEND_PORT"
 
   echo "🎉 部署完成"
-  echo "🌐 访问地址: http://$(detect_public_host):$FRONTEND_PORT"
+  echo "🌐 访问地址: http://$PANEL_ACCESS_HOST_VALUE:$FRONTEND_PORT"
   echo "💡 默认管理员账号: facker668 / wohenshuai"
   echo "⚠️  登录后请立即修改默认密码！"
 
@@ -611,6 +670,7 @@ update_panel() {
 
   echo "🚀 启动更新后的服务..."
   $DOCKER_CMD up -d
+  write_frontend_runtime_config "$(detect_public_host)" "${BACKEND_PORT:-$(read_env_value BACKEND_PORT || true)}"
 
   # 等待服务启动
   echo "⏳ 等待服务启动..."

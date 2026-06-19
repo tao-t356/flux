@@ -1,6 +1,6 @@
 services:
   backend:
-    image: "${BACKEND_IMAGE:-ghcr.io/tao-t356/flux-springboot-backend:2.0.7-beta}"
+    image: "${BACKEND_IMAGE:-ghcr.io/tao-t356/flux-springboot-backend:2.0.8-beta}"
     container_name: springboot-backend
     restart: unless-stopped
     environment:
@@ -8,7 +8,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRE_DAYS: "${JWT_EXPIRE_DAYS:-7}"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-*}"
-      FLUX_PANEL_VERSION: "${FLUX_PANEL_VERSION:-2.0.7-beta}"
+      FLUX_PANEL_VERSION: "${FLUX_PANEL_VERSION:-2.0.8-beta}"
       FLUX_PANEL_REPO: "${FLUX_PANEL_REPO:-tao-t356/flux}"
       FLUX_GITHUB_PROXY: "${FLUX_GITHUB_PROXY:-}"
       FLUX_FORCE_SECURE_NODE_TRANSPORT: "${FLUX_FORCE_SECURE_NODE_TRANSPORT:-true}"
@@ -34,7 +34,7 @@ services:
       start_period: 60s
 
   frontend:
-    image: "${FRONTEND_IMAGE:-ghcr.io/tao-t356/flux-vite-frontend:2.0.7-beta}"
+    image: "${FRONTEND_IMAGE:-ghcr.io/tao-t356/flux-vite-frontend:2.0.8-beta}"
     container_name: vite-frontend
     restart: unless-stopped
     ports:

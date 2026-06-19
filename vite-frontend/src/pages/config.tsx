@@ -42,13 +42,88 @@ interface ConfigItem {
   dependsValue?: string; // 依赖的配置项值
 }
 
+const DEFAULT_BACKEND_PORT = '6365';
+
+const stripProtocolAndPath = (value: string): string => {
+  return value
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .split('/')[0];
+};
+
+const stripPortForHost = (value: string): string => {
+  const bracketedHost = value.match(/^\[([^\]]+)\](:\d+)?$/);
+  if (bracketedHost) return bracketedHost[1];
+
+  const hostPort = value.match(/^([^:]+):\d+$/);
+  if (hostPort) return hostPort[1];
+
+  return value;
+};
+
+const formatHostForAddress = (host: string): string => {
+  const cleanHost = stripPortForHost(stripProtocolAndPath(host));
+  if (cleanHost.includes(':') && !cleanHost.startsWith('[')) {
+    return `[${cleanHost}]`;
+  }
+  return cleanHost;
+};
+
+const normalizePanelBackendAddress = (value: string): string => {
+  const cleanValue = stripProtocolAndPath(value);
+  if (!cleanValue) return '';
+
+  const ipv6WithPort = cleanValue.match(/^\[([^\]]+)\]:(\d+)$/);
+  if (ipv6WithPort) {
+    return `[${ipv6WithPort[1]}]:${ipv6WithPort[2]}`;
+  }
+
+  const hostPort = cleanValue.match(/^([^:]+):(\d+)$/);
+  if (hostPort) {
+    return `${hostPort[1]}:${hostPort[2]}`;
+  }
+
+  const bracketedIpv6 = cleanValue.match(/^\[([^\]]+)\]$/);
+  if (bracketedIpv6) {
+    return `[${bracketedIpv6[1]}]:${DEFAULT_BACKEND_PORT}`;
+  }
+
+  return `${formatHostForAddress(cleanValue)}:${DEFAULT_BACKEND_PORT}`;
+};
+
+const getDefaultPanelBackendAddress = (): string => {
+  if (typeof window === 'undefined') return '';
+
+  const runtimeConfig = window.AIZHUANJIAO_RUNTIME_CONFIG || {};
+  if (runtimeConfig.panelBackendAddress) {
+    return normalizePanelBackendAddress(runtimeConfig.panelBackendAddress);
+  }
+
+  const host = runtimeConfig.backendHost || window.location.hostname;
+  const port = runtimeConfig.backendPort || DEFAULT_BACKEND_PORT;
+  if (!host) return '';
+
+  return `${formatHostForAddress(host)}:${port}`;
+};
+
+const applyConfigDefaults = (configData: Record<string, string>): Record<string, string> => {
+  const nextConfigs = { ...configData };
+  if (!nextConfigs.ip?.trim()) {
+    const defaultBackendAddress = getDefaultPanelBackendAddress();
+    if (defaultBackendAddress) {
+      nextConfigs.ip = defaultBackendAddress;
+    }
+  }
+  return nextConfigs;
+};
+
 // 网站配置项定义
 const CONFIG_ITEMS: ConfigItem[] = [
   {
     key: 'ip',
     label: '面板后端地址',
-    placeholder: '请输入面板后端IP:PORT',
-    description: '格式“ip:port”,用于对接节点时使用,ip是你安装面板服务器的公网ip,端口是安装脚本内输入的后端端口。不要套CDN,不支持https,通讯数据有加密',
+    placeholder: getDefaultPanelBackendAddress() || '请输入面板后端IP:PORT',
+    description: '用于对接节点，已按当前访问地址自动预填。格式为“ip或域名:端口”，不要套 CDN，不支持 https，通信数据有加密。',
     type: 'input'
   },
   {
@@ -115,10 +190,11 @@ const getInitialConfigs = (): Record<string, string> => {
         initialConfigs[key] = cachedValue;
       }
     });
+    return applyConfigDefaults(initialConfigs);
   } catch (error) {
   }
   
-  return initialConfigs;
+  return applyConfigDefaults(initialConfigs);
 };
 
 export default function ConfigPage() {
@@ -150,14 +226,16 @@ export default function ConfigPage() {
     }
     
     try {
-      const configData = await getCachedConfigs();
+      const rawConfigData = await getCachedConfigs();
+      const configData = applyConfigDefaults(rawConfigData);
+      const hasDefaultChanges = JSON.stringify(configData) !== JSON.stringify(rawConfigData);
       
       // 只有在数据有变化时才更新
       const hasDataChanged = JSON.stringify(configData) !== JSON.stringify(configsToCompare);
-      if (hasDataChanged) {
+      if (hasDataChanged || hasDefaultChanges) {
         setConfigs(configData);
-        setOriginalConfigs({ ...configData });
-        setHasChanges(false);
+        setOriginalConfigs({ ...rawConfigData });
+        setHasChanges(hasDefaultChanges);
       } else {
       }
     } catch (error) {
@@ -426,4 +504,4 @@ export default function ConfigPage() {
       </div>
     
   );
-} 
+}

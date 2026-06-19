@@ -41,7 +41,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     @Resource
     ChainTunnelService chainTunnelService;
 
-    @Value("${flux.release-version:2.0.7-beta}")
+    @Value("${flux.release-version:2.0.8-beta}")
     private String releaseVersion;
 
     @Value("${flux.release-repo:tao-t356/flux}")
