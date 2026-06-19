@@ -5,14 +5,12 @@ import com.admin.common.aop.LogAnnotation;
 import com.admin.common.lang.R;
 import javax.servlet.http.HttpServletResponse;
 
-import com.admin.common.utils.Md5Util;
+import com.admin.common.utils.PasswordHashUtil;
 import com.admin.entity.User;
 import com.admin.entity.UserTunnel;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Objects;
 
 @RestController
 @CrossOrigin
@@ -44,10 +42,10 @@ public class OpenApiController extends BaseController {
             return R.err("鉴权失败");
         }
 
-        String pwdMd5 = Md5Util.md5(pwd);
-        if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
+        if (!PasswordHashUtil.matches(pwd, userInfo.getPwd())) {
             return R.err("鉴权失败");
         }
+        migratePasswordHashIfNeeded(userInfo, pwd);
 
         final long GIGA = 1024L * 1024L * 1024L;
         String headerValue;
@@ -75,6 +73,17 @@ public class OpenApiController extends BaseController {
         return headerValue;
     }
 
+    private void migratePasswordHashIfNeeded(User user, String rawPassword) {
+        if (!PasswordHashUtil.needsRehash(user.getPwd())) {
+            return;
+        }
+
+        User updateUser = new User();
+        updateUser.setId(user.getId());
+        updateUser.setPwd(PasswordHashUtil.hash(rawPassword));
+        updateUser.setUpdatedTime(System.currentTimeMillis());
+        userService.updateById(updateUser);
+    }
 
 
     private String buildSubscriptionHeader(long upload, long download, long total, long expire) {

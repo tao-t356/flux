@@ -6,6 +6,8 @@ import com.admin.common.dto.GostConfigDto;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
 import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.HttpContextUtils;
+import com.admin.common.utils.SecureTransportUtil;
 import com.admin.entity.*;
 import com.admin.service.ChainTunnelService;
 import com.alibaba.fastjson.JSON;
@@ -13,6 +15,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.web.bind.annotation.*;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +55,7 @@ public class FlowController extends BaseController {
 
     // 常量定义
     private static final String SUCCESS_RESPONSE = "ok";
+    private static final String SECURE_TRANSPORT_REQUIRED_RESPONSE = "secure transport required";
     private static final String DEFAULT_USER_TUNNEL_ID = "0";
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
 
@@ -69,6 +73,9 @@ public class FlowController extends BaseController {
     @Resource
     @Lazy
     ChainTunnelService chainTunnelService;
+
+    @Value("${flux.security.force-secure-node-transport:true}")
+    private boolean forceSecureNodeTransport;
 
     /**
      * 加密消息包装器
@@ -107,6 +114,11 @@ public class FlowController extends BaseController {
     @PostMapping("/config")
     @LogAnnotation
     public String config(@RequestBody String rawData, String secret) {
+        if (!isSecureNodeRequest()) {
+            log.warn("拒绝非安全节点配置上报");
+            return SECURE_TRANSPORT_REQUIRED_RESPONSE;
+        }
+
         Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
         if (node == null) return SUCCESS_RESPONSE;
 
@@ -143,6 +155,11 @@ public class FlowController extends BaseController {
     @RequestMapping("/upload")
     @LogAnnotation
     public String uploadFlowData(@RequestBody String rawData, String secret) {
+        if (!isSecureNodeRequest()) {
+            log.warn("拒绝非安全节点流量上报");
+            return SECURE_TRANSPORT_REQUIRED_RESPONSE;
+        }
+
         // 1. 验证节点权限
         if (!isValidNode(secret)) {
             return SUCCESS_RESPONSE;
@@ -377,6 +394,18 @@ public class FlowController extends BaseController {
     private boolean isValidNode(String secret) {
         int nodeCount = nodeService.count(new QueryWrapper<Node>().eq("secret", secret));
         return nodeCount > 0;
+    }
+
+    private boolean isSecureNodeRequest() {
+        if (!forceSecureNodeTransport) {
+            return true;
+        }
+
+        try {
+            return SecureTransportUtil.isSecureRequest(HttpContextUtils.getHttpServletRequest());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private String[] parseServiceName(String serviceName) {

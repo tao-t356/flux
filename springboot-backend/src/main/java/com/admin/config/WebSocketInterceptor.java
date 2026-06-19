@@ -1,12 +1,13 @@
 package com.admin.config;
 
 
-import com.admin.common.utils.IpUtils;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.SecureTransportUtil;
 import com.admin.entity.Node;
 import com.admin.service.NodeService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
@@ -27,6 +28,9 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
     @Resource
     NodeService nodeService;
 
+    @Value("${flux.security.force-secure-node-transport:true}")
+    private boolean forceSecureNodeTransport;
+
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Exception ex) {
 
@@ -42,6 +46,10 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         String tls = serverHttpRequest.getServletRequest().getParameter("tls");
         String socks = serverHttpRequest.getServletRequest().getParameter("socks");
         if (Objects.equals(type, "1")) {
+            if (forceSecureNodeTransport && !SecureTransportUtil.isSecureRequest(serverHttpRequest.getServletRequest())) {
+                log.warn("节点握手拒绝：需要 HTTPS/WSS，ip={}", getClientIp(request));
+                return false;
+            }
             log.info("节点握手请求：type={}, version={}, ip={}", type, version, getClientIp(request));
             Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
             if (node == null) {

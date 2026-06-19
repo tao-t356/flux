@@ -11,6 +11,10 @@ services:
       FLUX_PANEL_VERSION: "${FLUX_PANEL_VERSION:-2.0.7-beta}"
       FLUX_PANEL_REPO: "${FLUX_PANEL_REPO:-bqlpfy/flux-panel}"
       FLUX_GITHUB_PROXY: "${FLUX_GITHUB_PROXY:-}"
+      FLUX_FORCE_SECURE_NODE_TRANSPORT: "${FLUX_FORCE_SECURE_NODE_TRANSPORT:-true}"
+      LOGIN_MAX_ATTEMPTS: "${LOGIN_MAX_ATTEMPTS:-5}"
+      LOGIN_WINDOW_SECONDS: "${LOGIN_WINDOW_SECONDS:-300}"
+      LOGIN_LOCK_SECONDS: "${LOGIN_LOCK_SECONDS:-900}"
       LOG_DIR: /app/logs
       JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:

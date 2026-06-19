@@ -6,7 +6,7 @@ import com.admin.common.dto.GostDto;
 import com.admin.common.dto.NodeDto;
 import com.admin.common.dto.NodeUpdateDto;
 import com.admin.common.lang.R;
-import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.SecureTransportUtil;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.NodeMapper;
@@ -49,6 +49,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     @Value("${flux.github-proxy:}")
     private String githubProxy;
+
+    @Value("${flux.security.force-secure-node-transport:true}")
+    private boolean forceSecureNodeTransport;
 
 
     @Override
@@ -138,7 +141,12 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         command.append("curl -fL --retry 3 ")
                 .append(shellQuote(buildInstallScriptUrl()))
                 .append(" -o ./install.sh && chmod +x ./install.sh && ");
-        String processedServerAddr = GostUtil.processServerAddress(viteConfig.getValue());
+        String processedServerAddr;
+        try {
+            processedServerAddr = SecureTransportUtil.normalizePanelHttpAddress(viteConfig.getValue(), forceSecureNodeTransport);
+        } catch (IllegalArgumentException e) {
+            return R.err(e.getMessage());
+        }
         command.append("./install.sh")
                 .append(" -a ").append(shellQuote(processedServerAddr))  // 服务器地址
                 .append(" -s ").append(shellQuote(node.getSecret()));    // 节点密钥

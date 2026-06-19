@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/go-gost/x/internal/util/transport"
 )
 
 // Config 配置结构体
@@ -40,6 +42,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 	if config.Secret == "" {
 		return nil, fmt.Errorf("节点密钥不能为空")
+	}
+	if _, err := transport.HTTPBaseURL(config.Addr); err != nil {
+		return nil, err
 	}
 
 	return &config, nil

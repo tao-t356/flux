@@ -119,9 +119,16 @@ func main() {
 	log := xlogger.NewLogger()
 	logger.SetDefault(log)
 
-	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, version)
+	wsReporter, err := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, version)
+	if err != nil {
+		fmt.Printf("❌ WebSocket配置失败: %v\n", err)
+		os.Exit(1)
+	}
 	defer wsReporter.Stop()
-	service.SetHTTPReportURL(config.Addr, config.Secret)
+	if err := service.SetHTTPReportURL(config.Addr, config.Secret); err != nil {
+		fmt.Printf("❌ HTTP上报配置失败: %v\n", err)
+		os.Exit(1)
+	}
 
 	p := &program{}
 	if err := svc.Run(p); err != nil {

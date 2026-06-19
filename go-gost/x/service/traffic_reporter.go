@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/go-gost/core/observer/stats"
 	"github.com/go-gost/x/config"
 	"github.com/go-gost/x/internal/util/crypto"
+	"github.com/go-gost/x/internal/util/transport"
 	"github.com/go-gost/x/registry"
 )
 
@@ -26,12 +28,21 @@ type TrafficReportItem struct {
 	D int64  `json:"d"` // 下行流量（down缩写）
 }
 
-func SetHTTPReportURL(addr string, secret string) {
-	httpReportURL = "http://" + addr + "/flow/upload?secret=" + secret
-	configReportURL = "http://" + addr + "/flow/config?secret=" + secret
+func SetHTTPReportURL(addr string, secret string) error {
+	query := url.Values{}
+	query.Set("secret", secret)
+
+	var err error
+	httpReportURL, err = transport.HTTPURL(addr, "/flow/upload", query)
+	if err != nil {
+		return err
+	}
+	configReportURL, err = transport.HTTPURL(addr, "/flow/config", query)
+	if err != nil {
+		return err
+	}
 
 	// 创建 AES 加密器
-	var err error
 	httpAESCrypto, err = crypto.NewAESCrypto(secret)
 	if err != nil {
 		fmt.Printf("❌ 创建 HTTP AES 加密器失败: %v\n", err)
@@ -39,6 +50,7 @@ func SetHTTPReportURL(addr string, secret string) {
 	} else {
 		fmt.Printf("🔐 HTTP AES 加密器创建成功\n")
 	}
+	return nil
 }
 
 // sendBatchTrafficReport 批量发送多个服务的流量报告到HTTP接口

@@ -29,6 +29,7 @@ RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/d
 GITHUB_PROXY="${FLUX_GITHUB_PROXY:-}"
 DOWNLOAD_URL=$(build_download_url)
 INSTALL_DIR="${FLUX_AGENT_INSTALL_DIR:-/etc/flux_agent}"
+ALLOW_INSECURE_NODE_TRANSPORT="${FLUX_ALLOW_INSECURE_NODE_TRANSPORT:-0}"
 COUNTRY=$(curl -fsSL --connect-timeout 5 https://ipinfo.io/country 2>/dev/null || true)
 if [ -z "$GITHUB_PROXY" ] && [ "$COUNTRY" = "CN" ]; then
     GITHUB_PROXY="https://ghfast.top"
@@ -160,6 +161,36 @@ get_config_params() {
       exit 1
     fi
   fi
+
+  normalize_server_addr
+}
+
+normalize_server_addr() {
+  SERVER_ADDR="${SERVER_ADDR%/}"
+  local lower_addr
+  lower_addr=$(printf '%s' "$SERVER_ADDR" | tr '[:upper:]' '[:lower:]')
+
+  case "$lower_addr" in
+    wss://*|ws://*)
+      echo "❌ 服务器地址请填写 HTTP/HTTPS 地址，不要填写 WebSocket 地址。"
+      exit 1
+      ;;
+    https://*)
+      return 0
+      ;;
+    http://*)
+      if [[ "$ALLOW_INSECURE_NODE_TRANSPORT" == "1" || "$ALLOW_INSECURE_NODE_TRANSPORT" == "true" ]]; then
+        echo "⚠️ 已允许明文节点通信: $SERVER_ADDR"
+        return 0
+      fi
+      echo "❌ 节点通信默认强制 HTTPS/WSS，请使用 https:// 地址。"
+      echo "   如确需明文测试，请设置 FLUX_ALLOW_INSECURE_NODE_TRANSPORT=1 后重试。"
+      exit 1
+      ;;
+    *)
+      SERVER_ADDR="https://$SERVER_ADDR"
+      ;;
+  esac
 }
 
 # 解析命令行参数

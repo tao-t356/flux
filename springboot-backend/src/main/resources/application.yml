@@ -51,6 +51,12 @@ flux:
   release-version: ${FLUX_PANEL_VERSION:2.0.7-beta}
   release-repo: ${FLUX_PANEL_REPO:bqlpfy/flux-panel}
   github-proxy: ${FLUX_GITHUB_PROXY:}
+  security:
+    force-secure-node-transport: ${FLUX_FORCE_SECURE_NODE_TRANSPORT:true}
+    login:
+      max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
+      window-seconds: ${LOGIN_WINDOW_SECONDS:300}
+      lock-seconds: ${LOGIN_LOCK_SECONDS:900}
 
 
 captcha:

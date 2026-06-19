@@ -4,11 +4,13 @@ import cloud.tianai.captcha.application.ImageCaptchaApplication;
 import cloud.tianai.captcha.spring.plugins.secondary.SecondaryVerificationApplication;
 import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.StrUtil;
+import com.admin.common.security.LoginAttemptLimiter;
 import com.admin.common.dto.*;
 import com.admin.common.lang.R;
-import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.HttpContextUtils;
+import com.admin.common.utils.IpUtils;
 import com.admin.common.utils.JwtUtil;
-import com.admin.common.utils.Md5Util;
+import com.admin.common.utils.PasswordHashUtil;
 import com.admin.entity.*;
 import com.admin.mapper.UserMapper;
 import com.admin.service.*;
@@ -63,20 +65,43 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Resource
     ImageCaptchaApplication application;
 
+    @Resource
+    LoginAttemptLimiter loginAttemptLimiter;
+
 
     @Override
     public R login(LoginDto loginDto) {
+        String clientIp = getClientIp();
+        if (loginAttemptLimiter.isBlocked(loginDto.getUsername(), clientIp)) {
+            long seconds = loginAttemptLimiter.remainingLockSeconds(loginDto.getUsername(), clientIp);
+            return R.err("登录失败次数过多，请 " + seconds + " 秒后再试");
+        }
+
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "captcha_enabled"));
         if (viteConfig != null && Objects.equals(viteConfig.getValue(), "true")) {
-            if (StringUtils.isBlank(loginDto.getCaptchaId())) return R.err("验证码校验失败");
+            if (StringUtils.isBlank(loginDto.getCaptchaId())) {
+                loginAttemptLimiter.recordFailure(loginDto.getUsername(), clientIp);
+                return R.err("验证码校验失败");
+            }
             boolean valid = ((SecondaryVerificationApplication) application).secondaryVerification(loginDto.getCaptchaId());
-            if (!valid)  return R.err("验证码校验失败");
+            if (!valid) {
+                loginAttemptLimiter.recordFailure(loginDto.getUsername(), clientIp);
+                return R.err("验证码校验失败");
+            }
         }
 
         User user = this.getOne(new QueryWrapper<User>().eq("user", loginDto.getUsername()));
-        if (user == null) return R.err("账号或密码错误");
-        if (!user.getPwd().equals(Md5Util.md5(loginDto.getPassword())))  return R.err("账号或密码错误");
+        if (user == null) {
+            loginAttemptLimiter.recordFailure(loginDto.getUsername(), clientIp);
+            return R.err("账号或密码错误");
+        }
+        if (!PasswordHashUtil.matches(loginDto.getPassword(), user.getPwd())) {
+            loginAttemptLimiter.recordFailure(loginDto.getUsername(), clientIp);
+            return R.err("账号或密码错误");
+        }
         if (user.getStatus() == 0)  return R.err("账号被停用");
+        loginAttemptLimiter.recordSuccess(loginDto.getUsername(), clientIp);
+        migratePasswordHashIfNeeded(user, loginDto.getPassword());
         String token = JwtUtil.generateToken(user);
         boolean requirePasswordChange = Objects.equals(loginDto.getUsername(), "admin_user") || Objects.equals(loginDto.getPassword(), "admin_user");
         return R.ok(MapUtil.builder()
@@ -93,7 +118,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (count > 0) return R.err("用户名已存在");
         User user = new User();
         BeanUtils.copyProperties(userDto, user);
-        user.setPwd(Md5Util.md5(userDto.getPwd()));
+        user.setPwd(PasswordHashUtil.hash(userDto.getPwd()));
         user.setStatus(1);
         user.setRoleId(1);
         long currentTime = System.currentTimeMillis();
@@ -122,7 +147,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         User updateUser = new User();
         BeanUtils.copyProperties(userUpdateDto, updateUser);
         if (StrUtil.isNotBlank(userUpdateDto.getPwd())) {
-            updateUser.setPwd(Md5Util.md5(userUpdateDto.getPwd()));
+            updateUser.setPwd(PasswordHashUtil.hash(userUpdateDto.getPwd()));
         } else {
             updateUser.setPwd(null); // 不更新密码字段
         }
@@ -173,19 +198,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (!changePasswordDto.getNewPassword().equals(changePasswordDto.getConfirmPassword())) {
             return R.err("新密码和确认密码不匹配");
         }
-        String currentPasswordMd5 = Md5Util.md5(changePasswordDto.getCurrentPassword());
-        if (!user.getPwd().equals(currentPasswordMd5)) {
+        if (!PasswordHashUtil.matches(changePasswordDto.getCurrentPassword(), user.getPwd())) {
             return R.err("当前密码错误");
         }
         if (!user.getUser().equals(changePasswordDto.getNewUsername())) {
-            user.setPwd(Md5Util.md5(changePasswordDto.getNewPassword()));
             int count = this.count(new QueryWrapper<User>().eq("user", changePasswordDto.getNewUsername()).ne("id", user.getId()));
             if (count > 0) return R.err("用户名已存在");
         }
         User updateUser = new User();
         updateUser.setId(user.getId());
         updateUser.setUser(changePasswordDto.getNewUsername());
-        updateUser.setPwd(Md5Util.md5(changePasswordDto.getNewPassword()));
+        updateUser.setPwd(PasswordHashUtil.hash(changePasswordDto.getNewPassword()));
         updateUser.setUpdatedTime(System.currentTimeMillis());
         this.updateById(updateUser);
         return R.ok();
@@ -258,6 +281,27 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return Integer.parseInt(timeStr.split(":")[0]);
         }
         return java.time.LocalDateTime.now().getHour();
+    }
+
+    private void migratePasswordHashIfNeeded(User user, String rawPassword) {
+        if (!PasswordHashUtil.needsRehash(user.getPwd())) {
+            return;
+        }
+
+        User updateUser = new User();
+        updateUser.setId(user.getId());
+        updateUser.setPwd(PasswordHashUtil.hash(rawPassword));
+        updateUser.setUpdatedTime(System.currentTimeMillis());
+        this.updateById(updateUser);
+        log.info("用户 {} 密码哈希已迁移为 BCrypt", user.getId());
+    }
+
+    private String getClientIp() {
+        try {
+            return IpUtils.getIpAddr(HttpContextUtils.getHttpServletRequest());
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     private void fillForwardInIpAndPort(List<UserPackageDto.UserForwardDetailDto> forwards) {

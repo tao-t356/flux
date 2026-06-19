@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-gost/x/config"
 	"github.com/go-gost/x/internal/util/crypto"
+	"github.com/go-gost/x/internal/util/transport"
 	"github.com/go-gost/x/service"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -213,8 +214,10 @@ func (w *WebSocketReporter) connect() error {
 	}
 
 	// 使用最新的配置重新构建 URL
-	currentURL := "ws://" + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
-		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
+	currentURL, err := buildWebSocketURL(w.addr, w.secret, w.version, cfg.Http, cfg.Tls, cfg.Socks)
+	if err != nil {
+		return err
+	}
 
 	u, err := url.Parse(currentURL)
 	if err != nil {
@@ -1040,12 +1043,15 @@ func getMemoryInfo() MemoryInfo {
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
-func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, version string) *WebSocketReporter {
+func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, version string) (*WebSocketReporter, error) {
 
 	// 构建初始 WebSocket URL
-	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	fullURL, err := buildWebSocketURL(addr, secret, version, http, tls, socks)
+	if err != nil {
+		return nil, err
+	}
 
-	maskedURL := "ws://" + addr + "/system-info?type=1&secret=******&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	maskedURL := strings.Replace(fullURL, url.QueryEscape(secret), "******", 1)
 	fmt.Printf("🔗 WebSocket连接URL: %s\n", maskedURL)
 
 	reporter := NewWebSocketReporter(fullURL, secret)
@@ -1054,7 +1060,18 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 	reporter.secret = secret
 	reporter.version = version
 	reporter.Start()
-	return reporter
+	return reporter, nil
+}
+
+func buildWebSocketURL(addr string, secret string, version string, http int, tls int, socks int) (string, error) {
+	query := url.Values{}
+	query.Set("type", "1")
+	query.Set("secret", secret)
+	query.Set("version", version)
+	query.Set("http", strconv.Itoa(http))
+	query.Set("tls", strconv.Itoa(tls))
+	query.Set("socks", strconv.Itoa(socks))
+	return transport.WebSocketURL(addr, "/system-info", query)
 }
 
 // handleTcpPing 处理TCP ping诊断命令
