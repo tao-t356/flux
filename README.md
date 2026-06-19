@@ -66,6 +66,8 @@ docker compose -f docker-compose-v6.yml up -d
 curl -L https://raw.githubusercontent.com/tao-t356/flux/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && FLUX_PANEL_REPO=tao-t356/flux ./panel_install.sh
 ```
 
+安装脚本会自动安装 Docker，并自动分配前端/后端端口。需要固定端口时，可提前设置 `FRONTEND_PORT` 和 `BACKEND_PORT` 环境变量。
+
 节点端：
 
 ```bash

@@ -280,6 +280,52 @@ generate_random() {
   fi
 }
 
+is_valid_port() {
+  case "$1" in
+    ''|*[!0-9]*)
+      return 1
+      ;;
+  esac
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+is_port_in_use() {
+  local port="$1"
+  local port_hex
+
+  if command -v ss &> /dev/null; then
+    ss -H -ltnu 2>/dev/null | awk '{print $5}' | grep -Eq "(^|[^0-9])${port}$" && return 0
+  fi
+
+  if command -v netstat &> /dev/null; then
+    netstat -tuln 2>/dev/null | awk 'NR > 2 {print $4}' | grep -Eq "(^|[^0-9])${port}$" && return 0
+  fi
+
+  port_hex=$(printf '%04X' "$port")
+  if [ -r /proc/net/tcp ]; then
+    awk -v p=":$port_hex" '$2 ~ p "$" { found=1 } END { exit found ? 0 : 1 }' \
+      /proc/net/tcp /proc/net/tcp6 /proc/net/udp /proc/net/udp6 2>/dev/null && return 0
+  fi
+
+  return 1
+}
+
+find_available_port() {
+  local port="$1"
+  local reserved_port="${2:-}"
+
+  while [ "$port" -le 65535 ]; do
+    if [ "$port" != "$reserved_port" ] && ! is_port_in_use "$port"; then
+      echo "$port"
+      return 0
+    fi
+    port=$((port + 1))
+  done
+
+  echo "❌ 从 $1 到 65535 未找到可用端口。" >&2
+  return 1
+}
+
 # 删除脚本自身
 delete_self() {
   if [ "${KEEP_INSTALL_SCRIPT:-0}" = "1" ]; then
@@ -295,15 +341,35 @@ delete_self() {
 
 
 
-# 获取用户输入的配置参数
+# 获取配置参数
 get_config_params() {
-  echo "🔧 请输入配置参数："
+  echo "🔧 正在生成配置参数："
 
-  read -p "前端端口（默认 6366）: " FRONTEND_PORT
-  FRONTEND_PORT=${FRONTEND_PORT:-6366}
+  if [ -z "${FRONTEND_PORT:-}" ]; then
+    FRONTEND_PORT=$(find_available_port 6366)
+  elif ! is_valid_port "$FRONTEND_PORT"; then
+    echo "❌ FRONTEND_PORT 必须是 1-65535 之间的数字。"
+    exit 1
+  elif is_port_in_use "$FRONTEND_PORT"; then
+    echo "❌ FRONTEND_PORT=$FRONTEND_PORT 已被占用，请换一个端口。"
+    exit 1
+  fi
 
-  read -p "后端端口（默认 6365）: " BACKEND_PORT
-  BACKEND_PORT=${BACKEND_PORT:-6365}
+  if [ -z "${BACKEND_PORT:-}" ]; then
+    BACKEND_PORT=$(find_available_port 6365 "$FRONTEND_PORT")
+  elif ! is_valid_port "$BACKEND_PORT"; then
+    echo "❌ BACKEND_PORT 必须是 1-65535 之间的数字。"
+    exit 1
+  elif [ "$BACKEND_PORT" = "$FRONTEND_PORT" ]; then
+    echo "❌ BACKEND_PORT 不能和 FRONTEND_PORT 使用同一个端口。"
+    exit 1
+  elif is_port_in_use "$BACKEND_PORT"; then
+    echo "❌ BACKEND_PORT=$BACKEND_PORT 已被占用，请换一个端口。"
+    exit 1
+  fi
+
+  echo "✅ 前端端口：$FRONTEND_PORT"
+  echo "✅ 后端端口：$BACKEND_PORT"
 
   read -p "允许跨域来源（默认 *，生产建议填 https://你的域名，多个用英文逗号分隔）: " CORS_ALLOWED_ORIGINS
   CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
