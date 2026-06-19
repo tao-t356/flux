@@ -30,7 +30,7 @@ JWT_EXPIRE_DAYS=7
 CORS_ALLOWED_ORIGINS=*
 FRONTEND_PORT=6366
 BACKEND_PORT=6365
-FLUX_PANEL_ACCESS_HOST=你的域名或服务器IP
+FLUX_PANEL_ACCESS_HOST=服务器公网IP
 BACKEND_IMAGE=ghcr.io/tao-t356/flux-springboot-backend:2.0.8-beta
 FRONTEND_IMAGE=ghcr.io/tao-t356/flux-vite-frontend:2.0.8-beta
 FLUX_PANEL_VERSION=2.0.8-beta
@@ -65,7 +65,7 @@ docker compose -f docker-compose-v6.yml up -d
 curl -L https://raw.githubusercontent.com/tao-t356/flux/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && FLUX_PANEL_REPO=tao-t356/flux ./panel_install.sh
 ```
 
-安装脚本会自动安装 Docker、自动分配前端/后端端口，并提示填写访问域名或服务器 IP，用于生成访问地址和预填“面板后端地址”。没有域名时直接回车使用自动检测到的公网 IP。部署完成后脚本会自检本机前端端口、域名解析和访问地址，并尝试放行本机 `ufw`/`firewalld` 端口。外网访问还需要在 VPS 控制台安全组放行前端端口和后端端口；如果域名开启 CDN/代理，非 80/443 端口可能无法访问。需要固定配置时，可提前设置 `FRONTEND_PORT`、`BACKEND_PORT`、`CORS_ALLOWED_ORIGINS`、`FLUX_PANEL_ACCESS_HOST` 环境变量。若 Release 文件暂未生成，脚本会自动从 `main` 分支下载 compose 配置。
+安装脚本会自动安装 Docker、自动分配前端/后端端口，并自动检测服务器公网 IP，用于生成 `http://IP:端口` 访问地址和预填“面板后端地址”。部署完成后脚本会自检本机前端端口和访问地址，并尝试放行本机 `ufw`/`firewalld` 端口。外网访问还需要在 VPS 控制台安全组放行前端端口和后端端口。需要固定配置时，可提前设置 `FRONTEND_PORT`、`BACKEND_PORT`、`CORS_ALLOWED_ORIGINS`、`FLUX_PANEL_ACCESS_HOST` 环境变量。若 Release 文件暂未生成，脚本会自动从 `main` 分支下载 compose 配置。
 
 节点端：
 

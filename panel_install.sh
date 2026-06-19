@@ -718,44 +718,32 @@ ensure_panel_env_file() {
 
 select_access_host() {
   local prompt_mode="${1:-always}"
-  local default_host
-  local input_host
-  local saved_host
 
-  if [ -n "${FLUX_PANEL_ACCESS_HOST:-}" ] || [ -n "${PANEL_ACCESS_HOST:-}" ]; then
-    PANEL_ACCESS_HOST_VALUE=$(detect_public_host)
+  if [ -n "${FLUX_PANEL_ACCESS_HOST:-}" ]; then
+    PANEL_ACCESS_HOST_VALUE=$(format_access_host "$FLUX_PANEL_ACCESS_HOST")
     export PANEL_ACCESS_HOST="$PANEL_ACCESS_HOST_VALUE"
-    echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
+    echo "✅ 访问地址主机：$PANEL_ACCESS_HOST_VALUE"
     return 0
   fi
 
-  saved_host=$(get_saved_access_host || true)
-  if [ "$prompt_mode" = "if-missing" ] && [ -n "$saved_host" ]; then
-    PANEL_ACCESS_HOST_VALUE="$saved_host"
+  if [ -n "${PANEL_ACCESS_HOST:-}" ]; then
+    PANEL_ACCESS_HOST_VALUE=$(format_access_host "$PANEL_ACCESS_HOST")
     export PANEL_ACCESS_HOST="$PANEL_ACCESS_HOST_VALUE"
-    echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
+    echo "✅ 访问地址主机：$PANEL_ACCESS_HOST_VALUE"
     return 0
   fi
 
-  if [ -n "$saved_host" ]; then
-    default_host="$saved_host"
-  else
-    default_host=$(detect_machine_public_host)
-  fi
-
-  echo "🌐 请填写面板访问域名或服务器 IP，用于生成访问地址和预填面板后端地址。"
-  echo "   已解析到本机的域名可直接填写；没有域名直接回车使用自动检测值。"
-  read -p "访问域名或服务器 IP（默认 $default_host）: " input_host
-  input_host="${input_host:-$default_host}"
-  PANEL_ACCESS_HOST_VALUE=$(format_access_host "$input_host")
-
-  if [ -z "$PANEL_ACCESS_HOST_VALUE" ]; then
-    echo "❌ 访问域名/IP 不能为空。"
+  PANEL_ACCESS_HOST_VALUE=$(detect_machine_public_host)
+  if [ -z "$PANEL_ACCESS_HOST_VALUE" ] || [ "$PANEL_ACCESS_HOST_VALUE" = "服务器IP" ]; then
+    echo "❌ 未能自动检测服务器公网 IP。"
     exit 1
   fi
 
   export PANEL_ACCESS_HOST="$PANEL_ACCESS_HOST_VALUE"
-  echo "✅ 访问域名/IP：$PANEL_ACCESS_HOST_VALUE"
+  if [ "$prompt_mode" = "if-missing" ] && get_saved_access_host >/dev/null 2>&1; then
+    echo "ℹ️ 已忽略旧访问域名配置，改用服务器公网 IP"
+  fi
+  echo "✅ 访问地址主机：$PANEL_ACCESS_HOST_VALUE"
 }
 
 print_access_diagnostics() {
