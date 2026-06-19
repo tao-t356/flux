@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
-
-	"github.com/go-gost/x/internal/util/transport"
+	"strings"
 )
 
 // Config 配置结构体
@@ -43,9 +43,49 @@ func LoadConfig(configPath string) (*Config, error) {
 	if config.Secret == "" {
 		return nil, fmt.Errorf("节点密钥不能为空")
 	}
-	if _, err := transport.HTTPBaseURL(config.Addr); err != nil {
+	if err := validateServerAddr(config.Addr); err != nil {
 		return nil, err
 	}
 
 	return &config, nil
+}
+
+func validateServerAddr(addr string) error {
+	raw := strings.TrimSpace(addr)
+	if raw == "" {
+		return fmt.Errorf("服务器地址不能为空")
+	}
+
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("解析服务器地址失败: %w", err)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("服务器地址缺少主机名")
+	}
+
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecureNodeTransport() {
+			return nil
+		}
+		return fmt.Errorf("节点通信默认强制 HTTPS/WSS，请使用 https:// 地址；如确需明文测试，请设置 FLUX_ALLOW_INSECURE_NODE_TRANSPORT=1")
+	default:
+		return fmt.Errorf("服务器地址仅支持 http 或 https 协议")
+	}
+}
+
+func allowInsecureNodeTransport() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("FLUX_ALLOW_INSECURE_NODE_TRANSPORT"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
