@@ -9,7 +9,7 @@ export LC_ALL=C
 
 # 全局下载地址配置
 VERSION="${FLUX_PANEL_VERSION:-2.0.7-beta}"
-REPO="${FLUX_PANEL_REPO:-bqlpfy/flux-panel}"
+REPO="${FLUX_PANEL_REPO:-tao-t356/flux}"
 RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 BACKEND_IMAGE="${BACKEND_IMAGE:-bqlpfy/springboot-backend:${VERSION}}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-bqlpfy/vite-frontend:${VERSION}}"
@@ -43,22 +43,129 @@ get_docker_compose_url() {
   fi
 }
 
-# 检查 docker-compose 或 docker compose 命令
-check_docker() {
-  if command -v docker-compose &> /dev/null; then
-    DOCKER_CMD="docker-compose"
-  elif command -v docker &> /dev/null; then
-    if docker compose version &> /dev/null; then
-      DOCKER_CMD="docker compose"
-    else
-      echo "错误：检测到 docker，但不支持 'docker compose' 命令。请安装 docker-compose 或更新 docker 版本。"
-      exit 1
-    fi
-  else
-    echo "错误：未检测到 docker 或 docker-compose 命令。请先安装 Docker。"
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    echo "❌ 请使用 root 权限运行此脚本。"
     exit 1
   fi
-  echo "检测到 Docker 命令：$DOCKER_CMD"
+}
+
+detect_docker_cmd() {
+  if command -v docker-compose &> /dev/null; then
+    DOCKER_CMD="docker-compose"
+    return 0
+  fi
+  if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    DOCKER_CMD="docker compose"
+    return 0
+  fi
+  return 1
+}
+
+install_base_tools() {
+  if command -v apt-get &> /dev/null; then
+    apt-get update
+    apt-get install -y ca-certificates curl gnupg lsb-release
+  elif command -v dnf &> /dev/null; then
+    dnf install -y ca-certificates curl gnupg
+  elif command -v yum &> /dev/null; then
+    yum install -y ca-certificates curl gnupg
+  elif command -v apk &> /dev/null; then
+    apk add --no-cache ca-certificates curl
+  elif command -v zypper &> /dev/null; then
+    zypper --non-interactive install ca-certificates curl
+  elif command -v pacman &> /dev/null; then
+    pacman -Sy --noconfirm ca-certificates curl
+  fi
+}
+
+get_os_name() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "${PRETTY_NAME:-${NAME:-$ID}}"
+  else
+    uname -s
+  fi
+}
+
+install_compose_plugin() {
+  if detect_docker_cmd; then
+    return 0
+  fi
+
+  echo "🔧 正在安装 Docker Compose 插件..."
+  if command -v apt-get &> /dev/null; then
+    apt-get update
+    apt-get install -y docker-compose-plugin || true
+  elif command -v dnf &> /dev/null; then
+    dnf install -y docker-compose-plugin || true
+  elif command -v yum &> /dev/null; then
+    yum install -y docker-compose-plugin || true
+  elif command -v apk &> /dev/null; then
+    apk add --no-cache docker-cli-compose || true
+  elif command -v zypper &> /dev/null; then
+    zypper --non-interactive install docker-compose-plugin || true
+  elif command -v pacman &> /dev/null; then
+    pacman -S --noconfirm docker-compose || true
+  fi
+}
+
+start_docker_service() {
+  if command -v systemctl &> /dev/null; then
+    systemctl enable docker >/dev/null 2>&1 || true
+    systemctl start docker
+  elif command -v service &> /dev/null; then
+    service docker start
+  elif command -v rc-service &> /dev/null; then
+    rc-update add docker boot >/dev/null 2>&1 || true
+    rc-service docker start
+  fi
+}
+
+install_docker() {
+  require_root
+  echo "🔧 未检测到 Docker/Compose，正在根据当前 VPS 系统自动安装..."
+  echo "🖥️ 当前系统：$(get_os_name)"
+
+  install_base_tools
+
+  if command -v apk &> /dev/null; then
+    apk add --no-cache docker docker-cli docker-cli-compose
+  elif command -v pacman &> /dev/null; then
+    pacman -S --noconfirm docker docker-compose
+  else
+    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+    sh /tmp/get-docker.sh
+    rm -f /tmp/get-docker.sh
+  fi
+
+  start_docker_service
+  install_compose_plugin
+}
+
+# 检查 docker-compose 或 docker compose 命令，可在安装面板时自动安装
+check_docker() {
+  local auto_install="${1:-0}"
+
+  if ! command -v docker &> /dev/null || ! detect_docker_cmd; then
+    if [ "$auto_install" = "1" ]; then
+      install_docker
+    else
+      echo "错误：未检测到 docker 或 docker-compose 命令。请先安装 Docker，或选择 1 安装爱转角转发面板时自动安装。"
+      exit 1
+    fi
+  fi
+
+  if ! detect_docker_cmd; then
+    install_compose_plugin
+  fi
+
+  if ! command -v docker &> /dev/null || ! detect_docker_cmd; then
+    echo "❌ Docker 已尝试安装，但仍未检测到 docker compose 或 docker-compose。请检查系统软件源或 Docker 安装日志。"
+    exit 1
+  fi
+
+  echo "✅ 检测到 Docker 命令：$DOCKER_CMD"
 }
 
 # 检测系统是否支持 IPv6
@@ -155,12 +262,12 @@ configure_docker_ipv6() {
 # 显示菜单
 show_menu() {
   echo "==============================================="
-  echo "          面板管理脚本"
+  echo "      爱转角转发面板管理脚本"
   echo "==============================================="
   echo "请选择操作："
-  echo "1. 安装面板"
-  echo "2. 更新面板"
-  echo "3. 卸载面板"
+  echo "1. 安装爱转角转发面板"
+  echo "2. 更新爱转角转发面板"
+  echo "3. 卸载爱转角转发面板"
   echo "4. 退出"
   echo "==============================================="
 }
@@ -207,8 +314,8 @@ get_config_params() {
 
 # 安装功能
 install_panel() {
-  echo "🚀 开始安装面板..."
-  check_docker
+  echo "🚀 开始安装爱转角转发面板..."
+  check_docker 1
   get_config_params
 
   echo "🔽 下载必要文件..."
@@ -256,7 +363,7 @@ EOF
 
 # 更新功能
 update_panel() {
-  echo "🔄 开始更新面板..."
+  echo "🔄 开始更新爱转角转发面板..."
   check_docker
 
   echo "🔽 下载最新配置文件..."
@@ -329,7 +436,7 @@ update_panel() {
 
 # 卸载功能
 uninstall_panel() {
-  echo "🗑️ 开始卸载面板..."
+  echo "🗑️ 开始卸载爱转角转发面板..."
   check_docker
 
   if [[ ! -f "docker-compose.yml" ]]; then
@@ -340,7 +447,7 @@ uninstall_panel() {
     echo "✅ docker-compose.yml 下载完成"
   fi
 
-  read -p "确认卸载面板吗？此操作将停止并删除所有容器和数据 (y/N): " confirm
+  read -p "确认卸载爱转角转发面板吗？此操作将停止并删除所有容器和数据 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ 取消卸载"
     return 0

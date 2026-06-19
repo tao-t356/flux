@@ -24,7 +24,7 @@ build_download_url() {
 
 # 下载地址
 VERSION="${FLUX_PANEL_VERSION:-2.0.7-beta}"
-REPO="${FLUX_PANEL_REPO:-bqlpfy/flux-panel}"
+REPO="${FLUX_PANEL_REPO:-tao-t356/flux}"
 RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 GITHUB_PROXY="${FLUX_GITHUB_PROXY:-}"
 DOWNLOAD_URL=$(build_download_url)
@@ -44,12 +44,12 @@ fi
 # 显示菜单
 show_menu() {
   echo "==============================================="
-  echo "              管理脚本"
+  echo "        爱转角转发节点管理脚本"
   echo "==============================================="
   echo "请选择操作："
-  echo "1. 安装"
-  echo "2. 更新"
-  echo "3. 卸载"
+  echo "1. 安装节点"
+  echo "2. 更新节点"
+  echo "3. 卸载节点"
   echo "4. 退出"
   echo "==============================================="
 }

@@ -49,7 +49,7 @@ cors:
 
 flux:
   release-version: ${FLUX_PANEL_VERSION:2.0.7-beta}
-  release-repo: ${FLUX_PANEL_REPO:bqlpfy/flux-panel}
+  release-repo: ${FLUX_PANEL_REPO:tao-t356/flux}
   github-proxy: ${FLUX_GITHUB_PROXY:}
   security:
     force-secure-node-transport: ${FLUX_FORCE_SECURE_NODE_TRANSPORT:true}

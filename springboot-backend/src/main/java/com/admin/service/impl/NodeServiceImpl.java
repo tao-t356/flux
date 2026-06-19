@@ -44,7 +44,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     @Value("${flux.release-version:2.0.7-beta}")
     private String releaseVersion;
 
-    @Value("${flux.release-repo:bqlpfy/flux-panel}")
+    @Value("${flux.release-repo:tao-t356/flux}")
     private String releaseRepo;
 
     @Value("${flux.github-proxy:}")
