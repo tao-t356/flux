@@ -11,8 +11,10 @@ export LC_ALL=C
 VERSION="${FLUX_PANEL_VERSION:-2.0.7-beta}"
 REPO="${FLUX_PANEL_REPO:-tao-t356/flux}"
 RELEASE_BASE_URL="${FLUX_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
-BACKEND_IMAGE="${BACKEND_IMAGE:-bqlpfy/springboot-backend:${VERSION}}"
-FRONTEND_IMAGE="${FRONTEND_IMAGE:-bqlpfy/vite-frontend:${VERSION}}"
+RAW_BRANCH="${FLUX_RAW_BRANCH:-main}"
+RAW_BASE_URL="${FLUX_RAW_BASE_URL:-https://raw.githubusercontent.com/${REPO}/${RAW_BRANCH}}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/tao-t356/flux-springboot-backend:${VERSION}}"
+FRONTEND_IMAGE="${FRONTEND_IMAGE:-ghcr.io/tao-t356/flux-vite-frontend:${VERSION}}"
 GITHUB_PROXY="${FLUX_GITHUB_PROXY:-}"
 
 COUNTRY=$(curl -fsSL --connect-timeout 5 https://ipinfo.io/country 2>/dev/null || true)
@@ -31,6 +33,8 @@ with_github_proxy() {
 
 DOCKER_COMPOSEV4_URL=$(with_github_proxy "${RELEASE_BASE_URL}/docker-compose-v4.yml")
 DOCKER_COMPOSEV6_URL=$(with_github_proxy "${RELEASE_BASE_URL}/docker-compose-v6.yml")
+DOCKER_COMPOSEV4_RAW_URL=$(with_github_proxy "${RAW_BASE_URL}/docker-compose-v4.yml")
+DOCKER_COMPOSEV6_RAW_URL=$(with_github_proxy "${RAW_BASE_URL}/docker-compose-v6.yml")
 
 
 
@@ -41,6 +45,37 @@ get_docker_compose_url() {
   else
     echo "$DOCKER_COMPOSEV4_URL"
   fi
+}
+
+get_docker_compose_fallback_url() {
+  if check_ipv6_support > /dev/null 2>&1; then
+    echo "$DOCKER_COMPOSEV6_RAW_URL"
+  else
+    echo "$DOCKER_COMPOSEV4_RAW_URL"
+  fi
+}
+
+download_docker_compose() {
+  local target="${1:-docker-compose.yml}"
+  local url
+  local fallback_url
+
+  url=$(get_docker_compose_url)
+  fallback_url=$(get_docker_compose_fallback_url)
+
+  echo "📡 选择配置文件：$(basename "$url")"
+  if curl -fL --retry 3 --connect-timeout 15 -o "$target" "$url"; then
+    return 0
+  fi
+
+  if [ "$fallback_url" != "$url" ]; then
+    echo "⚠️ Release 下载失败，尝试从 main 分支下载配置文件..."
+    curl -fL --retry 3 --connect-timeout 15 -o "$target" "$fallback_url"
+    echo "✅ 已从 main 分支下载配置文件"
+    return 0
+  fi
+
+  return 1
 }
 
 require_root() {
@@ -65,17 +100,17 @@ detect_docker_cmd() {
 install_base_tools() {
   if command -v apt-get &> /dev/null; then
     apt-get update
-    apt-get install -y ca-certificates curl gnupg lsb-release
+    apt-get install -y ca-certificates curl gnupg lsb-release tar
   elif command -v dnf &> /dev/null; then
-    dnf install -y ca-certificates curl gnupg
+    dnf install -y ca-certificates curl gnupg tar
   elif command -v yum &> /dev/null; then
-    yum install -y ca-certificates curl gnupg
+    yum install -y ca-certificates curl gnupg tar
   elif command -v apk &> /dev/null; then
-    apk add --no-cache ca-certificates curl
+    apk add --no-cache ca-certificates curl tar
   elif command -v zypper &> /dev/null; then
-    zypper --non-interactive install ca-certificates curl
+    zypper --non-interactive install ca-certificates curl tar
   elif command -v pacman &> /dev/null; then
-    pacman -Sy --noconfirm ca-certificates curl
+    pacman -Sy --noconfirm ca-certificates curl tar
   fi
 }
 
@@ -141,6 +176,65 @@ install_docker() {
 
   start_docker_service
   install_compose_plugin
+}
+
+build_panel_images_from_source() {
+  local build_dir
+  local archive_path
+  local archive_url
+  local source_dir
+
+  build_dir="/tmp/aizhuanjiao-panel-build-$$"
+  archive_path="$build_dir/source.tar.gz"
+  archive_url=$(with_github_proxy "https://github.com/${REPO}/archive/refs/heads/${RAW_BRANCH}.tar.gz")
+
+  if ! command -v tar &> /dev/null; then
+    install_base_tools
+  fi
+
+  mkdir -p "$build_dir"
+  echo "🔽 正在下载源码用于本地构建镜像..."
+  curl -fL --retry 3 --connect-timeout 15 -o "$archive_path" "$archive_url"
+  tar -xzf "$archive_path" -C "$build_dir"
+  source_dir=$(find "$build_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+
+  if [ -z "$source_dir" ] || [ ! -d "$source_dir/springboot-backend" ] || [ ! -d "$source_dir/vite-frontend" ]; then
+    echo "❌ 源码下载成功，但未找到构建目录。"
+    rm -rf "$build_dir"
+    exit 1
+  fi
+
+  BACKEND_IMAGE="aizhuanjiao-backend:${VERSION}"
+  FRONTEND_IMAGE="aizhuanjiao-frontend:${VERSION}"
+
+  echo "🏗️ 构建后端镜像：$BACKEND_IMAGE"
+  docker build -t "$BACKEND_IMAGE" "$source_dir/springboot-backend"
+
+  echo "🏗️ 构建前端镜像：$FRONTEND_IMAGE"
+  docker build -t "$FRONTEND_IMAGE" "$source_dir/vite-frontend"
+
+  rm -rf "$build_dir"
+}
+
+ensure_panel_images() {
+  if [ "${FLUX_BUILD_LOCAL_IMAGES:-0}" = "1" ]; then
+    build_panel_images_from_source
+    return 0
+  fi
+
+  if docker image inspect "$BACKEND_IMAGE" >/dev/null 2>&1 && docker image inspect "$FRONTEND_IMAGE" >/dev/null 2>&1; then
+    echo "✅ 检测到本地面板镜像"
+    return 0
+  fi
+
+  echo "🔽 正在拉取面板镜像..."
+  if docker pull "$BACKEND_IMAGE" && docker pull "$FRONTEND_IMAGE"; then
+    echo "✅ 面板镜像拉取完成"
+    return 0
+  fi
+
+  echo "⚠️ 面板镜像拉取失败，改为在本机自动构建镜像..."
+  build_panel_images_from_source
 }
 
 # 检查 docker-compose 或 docker compose 命令，可在安装面板时自动安装
@@ -326,6 +420,42 @@ find_available_port() {
   return 1
 }
 
+normalize_cors_allowed_origins() {
+  local value="${1:-*}"
+  local origin
+  local result=""
+  local old_ifs="$IFS"
+
+  if [ "$value" = "*" ]; then
+    echo "*"
+    return 0
+  fi
+
+  IFS=','
+  for origin in $value; do
+    origin=$(printf '%s' "$origin" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -z "$origin" ]; then
+      continue
+    fi
+    case "$origin" in
+      http://*|https://*)
+        ;;
+      *)
+        origin="https://$origin"
+        ;;
+    esac
+
+    if [ -z "$result" ]; then
+      result="$origin"
+    else
+      result="$result,$origin"
+    fi
+  done
+  IFS="$old_ifs"
+
+  echo "${result:-*}"
+}
+
 # 删除脚本自身
 delete_self() {
   if [ "${KEEP_INSTALL_SCRIPT:-0}" = "1" ]; then
@@ -371,8 +501,8 @@ get_config_params() {
   echo "✅ 前端端口：$FRONTEND_PORT"
   echo "✅ 后端端口：$BACKEND_PORT"
 
-  read -p "允许跨域来源（默认 *，生产建议填 https://你的域名，多个用英文逗号分隔）: " CORS_ALLOWED_ORIGINS
-  CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+  CORS_ALLOWED_ORIGINS=$(normalize_cors_allowed_origins "${CORS_ALLOWED_ORIGINS:-*}")
+  echo "✅ 允许跨域来源：$CORS_ALLOWED_ORIGINS"
 
   # 生成JWT密钥
   JWT_SECRET=$(generate_random)
@@ -385,9 +515,7 @@ install_panel() {
   get_config_params
 
   echo "🔽 下载必要文件..."
-  DOCKER_COMPOSE_URL=$(get_docker_compose_url)
-  echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
-  curl -fL --retry 3 --connect-timeout 15 -o docker-compose.yml "$DOCKER_COMPOSE_URL"
+  download_docker_compose docker-compose.yml
   echo "✅ 文件准备完成"
 
   # 自动检测并配置 IPv6 支持
@@ -395,6 +523,8 @@ install_panel() {
     echo "🚀 系统支持 IPv6，自动启用 IPv6 配置..."
     configure_docker_ipv6
   fi
+
+  ensure_panel_images
 
   umask 077
   cat > .env <<EOF
@@ -433,9 +563,7 @@ update_panel() {
   check_docker
 
   echo "🔽 下载最新配置文件..."
-  DOCKER_COMPOSE_URL=$(get_docker_compose_url)
-  echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
-  curl -fL --retry 3 --connect-timeout 15 -o docker-compose.yml "$DOCKER_COMPOSE_URL"
+  download_docker_compose docker-compose.yml
   echo "✅ 下载完成"
 
   # 自动检测并配置 IPv6 支持
@@ -507,9 +635,7 @@ uninstall_panel() {
 
   if [[ ! -f "docker-compose.yml" ]]; then
     echo "⚠️ 未找到 docker-compose.yml 文件，正在下载以完成卸载..."
-    DOCKER_COMPOSE_URL=$(get_docker_compose_url)
-    echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
-    curl -fL --retry 3 --connect-timeout 15 -o docker-compose.yml "$DOCKER_COMPOSE_URL"
+    download_docker_compose docker-compose.yml
     echo "✅ docker-compose.yml 下载完成"
   fi
 
